@@ -1,0 +1,18 @@
+:root { --sunafil-blue: #003366; --sunafil-red: #d90000; }
+body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+
+.header-inst { border-bottom: 4px solid var(--sunafil-blue); }
+.card-main { border-radius: 20px; border: 1px solid #e2e8f0; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1); }
+
+/* Loader animado */
+.loader { border: 4px solid #f3f3f3; border-top: 4px solid var(--sunafil-blue); border-radius: 50%; width: 30px; height: 30px; animation: spin 1s linear infinite; display: none; }
+@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
+.btn-primary:hover { background-color: #002244; transform: translateY(-2px); }
+.btn-excel:hover { background-color: #14532d; transform: translateY(-2px); }
+
+/* Animación para la tabla */
+.animate-fade-in { animation: fadeIn 0.5s ease-in; }
+@keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+
+th { position: sticky; top: 0; background: #f8fafc; z-index: 10; border-bottom: 2px solid #e2e8f0; }
