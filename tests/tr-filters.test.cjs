@@ -1,0 +1,35 @@
+const assert=require('node:assert/strict');
+const filters=require('../tr-filters.js');
+const tr=require('../tr-analysis.js');
+const parser=require('../file-parser.js');
+const fs=require('node:fs');
+const person={TR5:[{record:{rawCells:[' Obréro ','01/01/2020','Lima','']}},{record:{rawCells:['Empleado','01/01/2024','Cusco','dato']}}],TR6:[{record:{rawCells:['AFP','']}}]};
+const rule=(index,operator,value='',end='',type='TR5')=>({index,operator,value,end,type});
+const matches=rules=>filters.matches(person,rules,tr.date);
+assert.equal(matches([rule(0,'equals','obrero')]),true);
+assert.equal(matches([rule(1,'between','2020-01-01','2020-01-01')]),true);
+assert.equal(matches([rule(1,'from','2024-01-01')]),true);
+assert.equal(matches([rule(1,'to','2019-12-31')]),false);
+assert.equal(matches([rule(0,'equals','obrero'),rule(2,'equals','cusco')]),false,'No combinar atributos de filas distintas');
+assert.equal(matches([rule(0,'equals','empleado'),rule(2,'equals','cusco')]),true);
+assert.equal(matches([rule(3,'empty')]),true);
+assert.equal(matches([rule(3,'notEmpty')]),true);
+assert.equal(matches([rule(8,'empty')]),false,'Campo ausente no equivale a vacío');
+assert.equal(matches([rule(0,'equals','obrero'),rule(0,'equals','AFP','','TR6')]),true);
+assert.equal(matches([rule(0,'from','2020-01-01')]),false,'Texto no se interpreta como fecha');
+assert.equal(filters.matches({TR5:person.TR5,TR6:[]},[rule(1,'empty','','','TR6')],tr.date),false);
+assert.equal(matches([]),true);
+const unknown=parser.parse('TR5: reporte\nTipo|Número|Apellido paterno|Nombres|Campo Nuevo\n01|00123|A|B|valor', 'test');
+const analysis=tr.build([unknown]);
+const matched=analysis.people.filter(p=>filters.matches(p,[rule(4,'equals','valor')],tr.date));
+assert.equal(tr.scope(analysis,'filtered',new Set(),matched,null).length,1);
+assert.equal(tr.sheets(analysis,matched,{}).find(s=>s.name==='TR5 Original').rows[1][4],'valor');
+if(process.argv[2]){
+ const dataset=parser.parse(parser.decode(fs.readFileSync(process.argv[2])).text,'muestra');
+ const actual=tr.build([dataset]);
+ const col=dataset.columns.find(c=>tr.key(c.rawHeader||'')==='FEC. INICIO').index;
+ const found=actual.people.filter(p=>filters.matches(p,[rule(col,'between','0001-01-01','9999-12-31')],tr.date));
+ assert.equal(found.length,121);
+ console.log('Muestra TR5: 121 trabajadores coinciden con intervalo completo; registros conservados.');
+}
+console.log('OK: texto, tildes, fechas inclusivas, vacíos, misma fila, cruce, columnas nuevas y exportación filtrada.');

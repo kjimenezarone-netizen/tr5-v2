@@ -1,0 +1,738 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SUNAFIL — Lector TR5/TR6 y RUC Masivo</title>
+    <meta name="description" content="Plataforma institucional SUNAFIL-DINI para análisis de reportes TR5/TR6 y consultas RUC masivas.">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body class="bg-slate-50 min-h-screen flex flex-col">
+
+    <!-- ════════════════════════════ HEADER ════════════════════════════ -->
+    <header class="header-inst w-full px-6 py-3 flex justify-between items-center bg-white shadow-sm">
+        <div class="flex items-center gap-3">
+            <div class="header-logo">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40" fill="none" width="36" height="36">
+                    <rect width="40" height="40" rx="8" fill="#003366"/>
+                    <path d="M8 30V16l12-8 12 8v14H24v-8h-8v8H8z" fill="white" opacity="0.92"/>
+                    <rect x="17" y="24" width="6" height="6" rx="1" fill="#003366"/>
+                </svg>
+            </div>
+            <div>
+                <h1 class="text-base font-black text-[#003366] leading-tight">SUNAFIL — DINI / SDAN</h1>
+                <p class="text-[11px] text-gray-400 leading-tight">Lector TR5/TR6 y RUC Masivo <span class="version-badge">V2</span></p>
+            </div>
+        </div>
+        <nav class="flex gap-1.5 items-center">
+            <button id="btn-dark-mode" title="Alternar modo oscuro" aria-label="Alternar modo oscuro" class="nav-icon-btn">
+                <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"/></svg>
+            </button>
+            <button id="nav_inicio" class="nav-btn">
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/></svg>
+                Inicio
+            </button>
+            <button id="nav_procesador" disabled class="nav-btn">
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+                TR5/TR6
+            </button>
+            <button id="nav_ruc" disabled class="nav-btn">
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"/></svg>
+                RUC Masivo
+            </button>
+            <button id="nav_dashboard" class="nav-btn nav-btn-primary">
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>
+                Dashboard
+            </button>
+        </nav>
+    </header>
+
+    <!-- ══════════════════════ BARRA DE INTENDENCIA ══════════════════════ -->
+    <section id="session-context" aria-label="Intendencia de trabajo">
+        <div class="intendencia-bar">
+            <div class="intendencia-icon">
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/><path stroke-linecap="round" stroke-linejoin="round" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+            </div>
+            <div class="intendencia-select-wrapper">
+                <label for="intendencia" class="intendencia-label">Intendencia de trabajo</label>
+                <select id="intendencia" aria-describedby="intendencia-help"></select>
+            </div>
+            <p id="intendencia-help" class="intendencia-help" role="status">Seleccione su intendencia para acceder a los módulos.</p>
+        </div>
+    </section>
+
+    <!-- ════════════════════════ PÁGINA: INICIO ════════════════════════ -->
+    <main id="page-inicio" class="container mx-auto max-w-5xl pt-8 px-6 pb-12">
+        <div class="module-grid">
+            <!-- Tarjeta TR5/TR6 -->
+            <article class="module-card">
+                <div class="module-card-icon module-card-icon--blue">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="36" height="36" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                    </svg>
+                </div>
+                <div class="module-card-body">
+                    <h2 class="module-card-title">Lector TR5/TR6</h2>
+                    <p class="module-card-desc">Cargue reportes TXT de planilla, cruce TR5 con TR6, busque trabajadores por documento o nombre y exporte a Excel con trazabilidad completa.</p>
+                    <ul class="module-card-features">
+                        <li>Cruce automático TR5 ↔ TR6 por empresa</li>
+                        <li>Filtros avanzados por columna y fecha</li>
+                        <li>Exportación por trabajador, selección o total</li>
+                    </ul>
+                </div>
+                <div class="module-card-action">
+                    <button id="open-tr" disabled class="btn-primary w-full py-3 text-white font-bold rounded-xl">Abrir lector TR5/TR6</button>
+                    <p class="module-card-lock-hint">🔒 Seleccione su intendencia para continuar</p>
+                </div>
+            </article>
+            <!-- Tarjeta RUC Masivo -->
+            <article class="module-card">
+                <div class="module-card-icon module-card-icon--green">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="36" height="36" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"/>
+                    </svg>
+                </div>
+                <div class="module-card-body">
+                    <h2 class="module-card-title">Consultas RUC Masivas</h2>
+                    <p class="module-card-desc">Analice archivos ZIP de consultas RUC ya realizadas. Identifique empresas únicas, detecte diferencias entre fuentes y exporte resultados consolidados.</p>
+                    <ul class="module-card-features">
+                        <li>Carga de múltiples archivos ZIP</li>
+                        <li>Vista por empresa única o por registro</li>
+                        <li>Detección automática de diferencias entre fuentes</li>
+                    </ul>
+                </div>
+                <div class="module-card-action">
+                    <button id="open-ruc" disabled class="btn-primary w-full py-3 text-white font-bold rounded-xl">Abrir RUC Masivo</button>
+                    <p class="module-card-lock-hint">🔒 Seleccione su intendencia para continuar</p>
+                </div>
+            </article>
+        </div>
+    </main>
+
+    <!-- ══════════════════════ PÁGINA: RUC MASIVO ══════════════════════ -->
+    <main id="page-ruc" class="hidden container mx-auto max-w-5xl pt-6 px-6 pb-12">
+
+        <!-- PASO 1: Cargar ZIP -->
+        <div class="step-section">
+            <div class="step-header">
+                <span class="step-number">1</span>
+                <div>
+                    <h2 class="step-title">Cargar archivos ZIP</h2>
+                    <p class="step-subtitle">Seleccione los ZIP de resultados de consultas RUC. Cada carga reemplaza los resultados anteriores. Límite: 20 MB por ZIP y por TXT extraído.</p>
+                </div>
+            </div>
+            <div class="card-main p-6 bg-white">
+                <div class="flex flex-wrap gap-3 items-end">
+                    <div class="flex-1 min-w-[200px]">
+                        <label for="ruc-files" class="form-label">Archivos ZIP</label>
+                        <input id="ruc-files" type="file" accept=".zip" multiple class="file-input">
+                    </div>
+                    <button id="ruc-load" class="btn-primary py-2.5 px-6 text-white font-bold rounded-xl flex items-center gap-2">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/></svg>
+                        Cargar y procesar
+                    </button>
+                    <button id="ruc-cancel" disabled class="btn-secondary py-2.5 px-4 rounded-xl">Cancelar</button>
+                </div>
+                <div class="mt-4">
+                    <p id="ruc-status" role="status" class="status-text">Seleccione archivos para comenzar.</p>
+                </div>
+                <ul id="ruc-issues" class="issues-list mt-2"></ul>
+                <details class="support-details mt-4">
+                    <summary>🔧 Diagnóstico técnico (soporte)</summary>
+                    <div class="mt-2">
+                        <button id="ruc-diagnostic-prepare" class="btn-ghost text-sm">Preparar diagnóstico</button>
+                        <div id="ruc-diagnostic-preview" class="mt-3" aria-live="polite"></div>
+                    </div>
+                </details>
+            </div>
+        </div>
+
+        <!-- PASO 2: Explorar resultados -->
+        <div class="step-section mt-5">
+            <div class="step-header">
+                <span class="step-number">2</span>
+                <div>
+                    <h2 class="step-title">Explorar resultados</h2>
+                    <p class="step-subtitle">Busque, filtre y revise los registros cargados. Puede ver registros individuales o agruparlos por empresa.</p>
+                </div>
+            </div>
+            <div class="card-main bg-white overflow-hidden">
+                <div class="px-6 pt-4 pb-3 border-b">
+                    <p id="ruc-metrics" class="metrics-text font-semibold"></p>
+                </div>
+                <div class="px-6 py-4 border-b bg-gray-50 flex flex-wrap gap-3 items-end">
+                    <div>
+                        <p class="form-label">Vista</p>
+                        <div class="view-toggle-group" role="group" aria-label="Tipo de vista">
+                            <button id="ruc-view-records" class="view-toggle-btn active" type="button">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 10h16M4 14h16M4 18h16"/></svg>
+                                Registros
+                            </button>
+                            <button id="ruc-view-companies" class="view-toggle-btn" type="button">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"/></svg>
+                                Empresas únicas
+                            </button>
+                        </div>
+                        <select id="ruc-view" class="sr-only" aria-hidden="true" tabindex="-1">
+                            <option value="records">Registros originales</option>
+                            <option value="companies">Empresas únicas</option>
+                        </select>
+                    </div>
+                    <div class="flex-1 min-w-[180px]">
+                        <label for="ruc-search" class="form-label">Buscar</label>
+                        <input id="ruc-search" type="text" class="form-input" placeholder="RUC, razón social, dirección…">
+                    </div>
+                    <div class="min-w-[190px]">
+                        <label for="ruc-filter" class="form-label">Mostrar</label>
+                        <select id="ruc-filter" class="form-select">
+                            <option value="all">Todos los registros</option>
+                            <option value="repeated">RUC repetidos</option>
+                            <option value="differences">RUC con diferencias</option>
+                            <option value="selected">Selección de trabajo</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="px-6 py-3 border-b flex flex-wrap gap-2 items-center">
+                    <button id="ruc-select-filtered" class="btn-ghost text-xs">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                        Seleccionar empresas del resultado filtrado
+                    </button>
+                    <button id="ruc-clear-selection" class="btn-ghost text-xs">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+                        Limpiar selección
+                    </button>
+                    <span id="ruc-selection-count" role="status" class="text-xs text-gray-500 ml-1"></span>
+                </div>
+                <p class="px-6 pt-2 text-xs text-gray-400">Seleccionar una empresa incluye todas sus apariciones, incluso fuera del filtro. La selección persiste al buscar y cambiar de página; una nueva carga la reinicia.</p>
+                <p class="px-6 pb-2 text-xs text-gray-400">Empresas únicas muestra RUC de 11 dígitos. Los registros sin RUC válido permanecen en la vista original.</p>
+                <details id="ruc-column-control" class="px-6 py-2 border-b border-t">
+                    <summary class="text-xs font-semibold text-gray-500 cursor-pointer py-1">Columnas visibles de registros RUC</summary>
+                    <p class="text-xs text-gray-400 mt-1">ZIP, TXT, fila, selección y acceso a ficha permanecen visibles.</p>
+                    <div id="ruc-column-options" class="column-options mt-2"></div>
+                </details>
+                <div class="overflow-auto max-h-[520px]">
+                    <table class="ruc-table w-full text-left text-xs"><thead id="ruc-head"></thead><tbody id="ruc-body"></tbody></table>
+                </div>
+                <div class="flex gap-3 items-center px-6 py-3 border-t bg-gray-50">
+                    <button id="ruc-prev" class="btn-page">← Anterior</button>
+                    <span id="ruc-page" class="text-xs text-gray-600 flex-1 text-center"></span>
+                    <button id="ruc-next" class="btn-page">Siguiente →</button>
+                </div>
+            </div>
+            <!-- Ficha de empresa -->
+            <section id="ruc-detail" class="hidden mt-4 card-main bg-white p-6" aria-labelledby="ruc-detail-title">
+                <div class="flex justify-between items-start mb-4 gap-4">
+                    <h3 id="ruc-detail-title" tabindex="-1" class="text-lg font-bold text-[#003366]"></h3>
+                    <button id="ruc-detail-close" class="btn-ghost text-sm flex-shrink-0">✕ Cerrar ficha</button>
+                </div>
+                <p class="text-xs text-gray-500 mb-4">Los valores diferentes se muestran con sus fuentes; no se elige un valor principal automáticamente.</p>
+                <button id="ruc-detail-export" class="btn-secondary text-sm mb-5">Previsualizar Excel de esta empresa</button>
+                <div id="ruc-detail-content" class="overflow-auto"></div>
+            </section>
+        </div>
+
+        <!-- PASO 3: Exportar -->
+        <div class="step-section mt-5">
+            <div class="step-header">
+                <span class="step-number">3</span>
+                <div>
+                    <h2 class="step-title">Exportar a Excel</h2>
+                    <p class="step-subtitle">Seleccione el alcance y previsualice antes de descargar.</p>
+                </div>
+            </div>
+            <div class="card-main p-6 bg-white">
+                <div class="flex flex-wrap gap-4 items-end">
+                    <div class="flex-1 min-w-[220px]">
+                        <label for="ruc-export-scope" class="form-label">Alcance</label>
+                        <select id="ruc-export-scope" class="form-select">
+                            <option value="consolidated">Consolidado de empresas + originales</option>
+                            <option value="company">Empresa de la última ficha abierta</option>
+                            <option value="all">Todos los registros originales</option>
+                            <option value="filtered">Resultado filtrado</option>
+                            <option value="selected">Empresas seleccionadas</option>
+                            <option value="repeated">RUC repetidos</option>
+                            <option value="differences">RUC con diferencias</option>
+                            <option value="zip">Por ZIP de origen</option>
+                        </select>
+                    </div>
+                    <div class="min-w-[180px]">
+                        <label for="ruc-export-zip" class="form-label">ZIP (para alcance Por ZIP)</label>
+                        <select id="ruc-export-zip" class="form-select"></select>
+                    </div>
+                    <button id="ruc-preview-button" disabled class="btn-primary py-2.5 px-5 text-white font-bold rounded-xl">Previsualizar exportación</button>
+                </div>
+                <p class="text-xs text-gray-500 mt-3">Solo «Resultado filtrado» aplica la búsqueda y el filtro de la tabla. Cada TXT se exporta en una hoja propia, junto con Resumen y Fuentes.</p>
+                <div id="ruc-export-preview" class="hidden mt-5 pt-5 border-t" aria-live="polite">
+                    <p id="ruc-export-summary" class="font-bold text-sm mb-3 text-[#003366]"></p>
+                    <ul id="ruc-export-sheets" class="sheets-list mb-3"></ul>
+                    <p class="text-xs text-gray-500 mb-2">Muestra de los primeros 5 registros: ZIP, TXT, fila y valores originales.</p>
+                    <div class="overflow-auto max-h-[280px] border rounded-lg">
+                        <table id="ruc-export-sample" class="ruc-table text-xs w-full"></table>
+                    </div>
+                    <button id="ruc-download" disabled class="btn-excel mt-4 py-3 px-6 text-white font-bold rounded-xl flex items-center gap-2">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+                        Descargar Excel previsualizado
+                    </button>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- ══════════════════════ PÁGINA: TR5/TR6 ══════════════════════ -->
+    <main id="page-procesador" class="hidden container mx-auto max-w-5xl pt-6 px-6">
+
+        <!-- PASO 1: Cargar reporte -->
+        <div class="step-section">
+            <div class="step-header">
+                <span class="step-number">1</span>
+                <div>
+                    <h2 class="step-title">Cargar reporte TR</h2>
+                    <p class="step-subtitle">Seleccione un TXT (TR5 o TR6) o un par TR5 + TR6 de la misma empresa para cruzarlos.</p>
+                </div>
+            </div>
+            <div class="card-main p-6 bg-white">
+                <div id="upload-zone" class="opacity-30 pointer-events-none border-2 border-dashed border-gray-300 rounded-2xl p-10 text-center transition-all duration-300">
+                    <input id="file_input" type="file" accept=".txt" multiple class="hidden">
+                    <label for="file_input" id="drop-label" class="flex flex-col items-center justify-center w-full min-h-[110px] cursor-pointer rounded-2xl hover:bg-slate-50 transition relative">
+                        <div id="label-content-default" class="flex flex-col items-center gap-2">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-12 w-12 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/>
+                            </svg>
+                            <p id="file_label" class="text-gray-500 font-semibold">Haga clic aquí o arrastre su archivo TXT</p>
+                            <p class="text-xs text-gray-400">Puede seleccionar un TR5 y un TR6 de la misma empresa</p>
+                        </div>
+                        <div id="file-info-container" class="hidden flex-col items-center gap-2 animate-fade-in">
+                            <span id="file_status" class="text-green-600 font-bold uppercase text-sm"></span>
+                            <button type="button" id="btn_clear_file" class="flex items-center gap-1 bg-red-100 text-red-600 px-3 py-1.5 rounded-full text-xs font-bold hover:bg-red-200 transition">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd"/></svg>
+                                Quitar archivo
+                            </button>
+                        </div>
+                    </label>
+                </div>
+                <div class="grid grid-cols-2 gap-3 mt-5">
+                    <button id="btn_process_data" class="btn-primary py-3.5 text-white font-bold rounded-xl shadow flex items-center justify-center gap-2">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
+                        Visualizar datos
+                    </button>
+                    <button id="btn_download_excel" class="btn-excel py-3.5 text-white font-bold rounded-xl shadow flex items-center justify-center gap-2">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+                        Previsualizar Excel
+                    </button>
+                </div>
+                <div class="flex items-center gap-3 mt-4">
+                    <div id="loader" class="loader"></div>
+                    <p id="tr-processing-status" role="status" class="status-text flex-1"></p>
+                    <button id="tr-cancel" disabled class="btn-ghost text-sm">Cancelar</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- PASOS 2, 3: Resultados (ocultos hasta cargar) -->
+        <section id="preview_section" class="hidden animate-fade-in mt-5 pb-12 space-y-5">
+
+            <!-- PASO 2: Trabajadores -->
+            <section id="tr-people" class="hidden step-section">
+                <div class="step-header flex flex-wrap items-center justify-between gap-4">
+                    <div class="flex items-center gap-3">
+                        <span class="step-number">2</span>
+                        <div>
+                            <h2 class="step-title">Trabajadores y Cruce Inspectivo TR5 / TR6</h2>
+                            <p id="tr-person-summary" role="status" class="step-subtitle"></p>
+                        </div>
+                    </div>
+                    <div>
+                        <button id="tr-direct-download-excel" class="btn-excel py-2.5 px-5 text-white font-bold rounded-xl flex items-center gap-2 shadow-sm hover:shadow transition-all">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+                            <span>📥 Descargar Excel para Informe</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Tarjetas de Hallazgos Automáticos de 1 Clic -->
+                <div id="tr-quick-findings" class="grid grid-cols-2 sm:grid-cols-4 gap-3 my-4">
+                    <button type="button" data-filter="all" class="quick-finding-card active">
+                        <span class="qf-icon">👥</span>
+                        <div class="qf-info">
+                            <span class="qf-count" id="qf-total">0</span>
+                            <span class="qf-label">Total trabajadores</span>
+                        </div>
+                    </button>
+                    <button type="button" data-filter="multiple" class="quick-finding-card highlight-amber">
+                        <span class="qf-icon">🔁</span>
+                        <div class="qf-info">
+                            <span class="qf-count" id="qf-multiple">0</span>
+                            <span class="qf-label">Con reingresos / múltiples</span>
+                        </div>
+                    </button>
+                    <button type="button" data-filter="no_cuspp" class="quick-finding-card highlight-orange">
+                        <span class="qf-icon">⚠️</span>
+                        <div class="qf-info">
+                            <span class="qf-count" id="qf-no-cuspp">0</span>
+                            <span class="qf-label">Sin código CUSPP</span>
+                        </div>
+                    </button>
+                    <button type="button" data-filter="no_sctr" class="quick-finding-card highlight-red">
+                        <span class="qf-icon">🛡️</span>
+                        <div class="qf-info">
+                            <span class="qf-count" id="qf-no-sctr">0</span>
+                            <span class="qf-label">Sin cobertura SCTR</span>
+                        </div>
+                    </button>
+                </div>
+
+                <div class="card-main bg-white overflow-hidden">
+                    <div class="px-6 py-4 border-b bg-gray-50 flex flex-wrap gap-3 items-end">
+                        <div class="flex-1 min-w-[180px]">
+                            <label for="tr-person-search" class="form-label">Buscar trabajador</label>
+                            <input id="tr-person-search" type="text" class="form-input" placeholder="DNI, apellido o nombre…">
+                        </div>
+                        <div class="min-w-[220px]">
+                            <label for="tr-person-filter" class="form-label">Filtrar vista</label>
+                            <select id="tr-person-filter" class="form-select">
+                                <option value="all">👥 Todos los trabajadores</option>
+                                <option value="multiple">🔁 Con reingresos / múltiples contratos</option>
+                                <option value="no_cuspp">⚠️ Sin CUSPP registrado</option>
+                                <option value="no_sctr">🛡️ Sin cobertura SCTR</option>
+                                <option value="En ambos">✅ En ambos reportes (TR5 + TR6)</option>
+                                <option value="Solo TR5">📄 Solo en TR5</option>
+                                <option value="Solo TR6">📄 Solo en TR6</option>
+                                <option value="differences">⚠️ Diferencias de identidad</option>
+                                <option value="selected">⭐ Selección de trabajo</option>
+                                <option value="Identidad incompleta">❌ Identidad incompleta</option>
+                            </select>
+                        </div>
+                        <div class="flex gap-2 flex-wrap">
+                            <button id="tr-select-filtered" class="btn-ghost text-xs">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                                Seleccionar todos los filtrados
+                            </button>
+                            <button id="tr-clear-selection" class="btn-ghost text-xs">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+                                Limpiar selección
+                            </button>
+                        </div>
+                    </div>
+                    <div class="px-6 py-2 border-b">
+                        <p id="tr-selection-count" role="status" class="text-xs text-gray-500"></p>
+                    </div>
+                    <!-- Filtros avanzados colapsados -->
+                    <details class="border-b">
+                        <summary class="px-6 py-3 text-sm font-semibold text-gray-600 cursor-pointer hover:bg-gray-50 flex items-center gap-2">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z"/></svg>
+                            Filtros avanzados por columna
+                        </summary>
+                        <div class="px-6 pb-5 pt-4">
+                            <h4 id="tr-filter-title" class="sr-only">Filtros avanzados</h4>
+                            <p class="text-xs text-gray-500 mb-4">Todos los filtros deben cumplirse. Las condiciones de un mismo reporte se evalúan sobre una misma fila; si combina TR5 y TR6, debe existir una fila coincidente en cada reporte. Se muestran los trabajadores encontrados con todos sus registros.</p>
+                            <div class="flex flex-wrap gap-3 items-end">
+                                <div class="min-w-[150px]">
+                                    <label for="tr-filter-field" class="form-label">Campo</label>
+                                    <select id="tr-filter-field" class="form-select"></select>
+                                </div>
+                                <div class="min-w-[160px]">
+                                    <label for="tr-filter-operator" class="form-label">Condición</label>
+                                    <select id="tr-filter-operator" class="form-select">
+                                        <option value="contains">Contiene</option>
+                                        <option value="equals">Igual a</option>
+                                        <option value="notEquals">Distinto de</option>
+                                        <option value="starts">Empieza por</option>
+                                        <option value="empty">Vacío</option>
+                                        <option value="notEmpty">Con información</option>
+                                        <option value="dateEquals">Fecha igual a</option>
+                                        <option value="from">Fecha desde (inclusive)</option>
+                                        <option value="to">Fecha hasta (inclusive)</option>
+                                        <option value="between">Fecha entre (inclusive)</option>
+                                    </select>
+                                </div>
+                                <div class="min-w-[140px]">
+                                    <label for="tr-filter-value" class="form-label">Valor o fecha inicial</label>
+                                    <input id="tr-filter-value" type="text" class="form-input">
+                                </div>
+                                <div class="min-w-[140px]">
+                                    <label for="tr-filter-end" class="form-label">Fecha final</label>
+                                    <input id="tr-filter-end" type="date" disabled class="form-input">
+                                </div>
+                                <div class="flex gap-2">
+                                    <button id="tr-filter-add" class="btn-primary text-sm py-2 px-4 rounded-lg">Agregar filtro</button>
+                                    <button id="tr-filter-clear" class="btn-ghost text-sm">Limpiar</button>
+                                </div>
+                            </div>
+                            <p class="text-xs text-gray-400 mt-3">Texto: sin distinguir mayúsculas ni tildes. Fechas: dd/mm/aaaa o aaaa-mm-dd. Campos ausentes y fechas inválidas no coinciden con condiciones de fecha.</p>
+                            <p id="tr-filter-count" role="status" class="text-xs font-semibold text-[#003366] mt-2"></p>
+                            <ul id="tr-active-filters" class="filter-chips mt-2"></ul>
+                        </div>
+                    </details>
+                    <!-- Tabla de trabajadores -->
+                    <div class="overflow-auto max-h-[480px]">
+                        <table class="ruc-table text-xs w-full">
+                            <thead>
+                                <tr>
+                                    <th>Seleccionar</th><th>Tipo documento</th><th>Número</th><th>Nombres registrados</th><th>TR5</th><th>TR6</th><th>Presencia</th><th>Observaciones</th><th>Ficha</th>
+                                </tr>
+                            </thead>
+                            <tbody id="tr-person-body"></tbody>
+                        </table>
+                    </div>
+                    <div class="flex gap-3 items-center px-6 py-3 border-t bg-gray-50">
+                        <button id="tr-person-prev" class="btn-page">← Anterior</button>
+                        <span id="tr-person-page" class="text-xs text-gray-600 flex-1 text-center"></span>
+                        <button id="tr-person-next" class="btn-page">Siguiente →</button>
+                    </div>
+                    <div id="tr-person-detail" class="overflow-auto px-6 pb-4"></div>
+                    <details class="border-t support-details px-6 py-3">
+                        <summary>🔧 Diagnóstico técnico (soporte)</summary>
+                        <div class="mt-2">
+                            <button id="tr-diagnostic-prepare" class="btn-ghost text-sm">Preparar diagnóstico</button>
+                            <div id="tr-diagnostic-preview" class="mt-3" aria-live="polite"></div>
+                        </div>
+                    </details>
+                </div>
+                <!-- Exportación colapsada -->
+                <details class="mt-3">
+                    <summary class="step-export-summary">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+                        Exportar trabajadores a Excel
+                    </summary>
+                    <div class="card-main bg-white p-6 mt-2" aria-labelledby="tr-export-title">
+                        <h4 id="tr-export-title" class="sr-only">Centro de exportación TR5/TR6</h4>
+                        <div class="flex flex-wrap gap-4 items-end">
+                            <div class="flex-1 min-w-[220px]">
+                                <label for="tr-export-scope" class="form-label">Alcance</label>
+                                <select id="tr-export-scope" class="form-select">
+                                    <option value="all">Completo: todos los trabajadores</option>
+                                    <option value="filtered">Trabajadores filtrados</option>
+                                    <option value="selected">Trabajadores seleccionados</option>
+                                    <option value="individual">Trabajador de la última ficha abierta</option>
+                                </select>
+                            </div>
+                            <button id="tr-export-prepare" class="btn-primary py-2.5 px-5 text-white font-bold rounded-xl">Previsualizar Excel</button>
+                        </div>
+                        <p class="text-xs text-gray-500 mt-3">Cada alcance incluye todas las filas TR5/TR6 de los trabajadores incluidos. Solo «Trabajadores filtrados» aplica la búsqueda y filtro de esta vista. Los filtros de la tabla de registros inferior son independientes.</p>
+                        <div id="tr-export-preview" class="hidden mt-5 pt-5 border-t" aria-live="polite">
+                            <p id="tr-export-summary" class="font-bold text-sm mb-3 text-[#003366]"></p>
+                            <ul id="tr-export-sheets" class="sheets-list mb-3"></ul>
+                            <p class="text-xs text-gray-500 mb-2">Muestra de los primeros cinco trabajadores:</p>
+                            <div class="overflow-auto border rounded-lg"><table id="tr-export-sample" class="ruc-table text-xs w-full"></table></div>
+                            <button id="tr-export-download" disabled class="btn-excel mt-4 py-3 px-6 text-white font-bold rounded-xl flex items-center gap-2">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+                                Descargar Excel previsualizado
+                            </button>
+                        </div>
+                    </div>
+                </details>
+            </section>
+
+            <!-- PASO 3: Registros originales -->
+            <section class="step-section">
+                <div class="step-header">
+                    <span class="step-number">3</span>
+                    <div>
+                        <h2 class="step-title">Registros originales del reporte</h2>
+                        <p class="step-subtitle">Consulte las filas exactas de cada archivo TR cargado. La exportación filtrada usa la búsqueda y filtros de la vista de trabajadores superior.</p>
+                    </div>
+                </div>
+                <div class="flex flex-wrap gap-4 items-end mb-3">
+                    <div class="min-w-[240px]">
+                        <label for="tr-source-select" class="form-label">Reporte</label>
+                        <select id="tr-source-select" class="form-select"></select>
+                    </div>
+                </div>
+                <details class="mb-3">
+                    <summary class="step-export-summary text-sm">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2"/></svg>
+                        Columnas visibles del reporte TR
+                    </summary>
+                    <div class="card-main bg-white p-4 mt-2">
+                        <p class="text-xs text-gray-500 mb-2">La configuración se conserva por archivo al cambiar de reporte y se reinicia con una nueva carga.</p>
+                        <div id="tr-column-options" class="column-options"></div>
+                    </div>
+                </details>
+                <div id="company_container" class="hidden card-main bg-blue-50/40 p-5 mb-3 border border-blue-100">
+                    <h4 class="text-[#003366] font-bold text-sm mb-3 uppercase">Resumen de la Entidad</h4>
+                    <div id="company_list" class="grid grid-cols-1 md:grid-cols-2 gap-3 text-[12px] uppercase font-bold"></div>
+                </div>
+                <div id="file_metrics_container" class="hidden grid grid-cols-1 md:grid-cols-2 gap-5 mb-3">
+                    <div class="bg-white p-4 rounded-xl shadow-sm border border-gray-100 flex flex-col items-center">
+                        <h4 class="text-[#003366] text-xs font-bold uppercase mb-3 text-center">Distribución por Tipo de Doc.</h4>
+                        <div style="width:100%;max-width:300px;height:200px;"><canvas id="chart-file-tipo"></canvas></div>
+                    </div>
+                    <div class="bg-white p-4 rounded-xl shadow-sm border border-gray-100 flex flex-col items-center">
+                        <h4 class="text-[#003366] text-xs font-bold uppercase mb-3 text-center">Ocupaciones (Top 5)</h4>
+                        <div style="width:100%;max-width:300px;height:200px;"><canvas id="chart-file-ocup"></canvas></div>
+                    </div>
+                </div>
+                <div class="card-main overflow-hidden bg-white">
+                    <div class="px-4 py-3 border-b bg-gray-50 flex flex-wrap gap-3 items-end">
+                        <h3 class="font-bold text-[#003366] text-xs uppercase w-full">Registros detectados</h3>
+                        <div class="min-w-[140px]">
+                            <label for="filter_columna" class="form-label">Columna</label>
+                            <select id="filter_columna" class="form-select"><option value="">🔍 Todas las columnas</option></select>
+                        </div>
+                        <div class="min-w-[130px]">
+                            <label for="filter_tipo" class="form-label">Tipo documento</label>
+                            <select id="filter_tipo" class="form-select"><option value="">-- Todos los Tipos --</option></select>
+                        </div>
+                        <div class="min-w-[150px]">
+                            <label for="filter_ocupacion" class="form-label">Ocupación</label>
+                            <select id="filter_ocupacion" class="form-select"><option value="">-- Todas las Ocupaciones --</option></select>
+                        </div>
+                        <div class="flex-1 min-w-[150px]">
+                            <label for="search_box" class="form-label">Buscar en registros</label>
+                            <input type="text" id="search_box" placeholder="Buscar…" class="form-input">
+                        </div>
+                    </div>
+                    <div class="overflow-auto max-h-[500px]">
+                        <table class="w-full text-left text-[10px] tracking-tight uppercase" id="data_table">
+                            <thead class="bg-gray-100 sticky top-0"><tr id="table_head" class="text-[#003366]"></tr></thead>
+                            <tbody id="table_body" class="divide-y divide-gray-100 text-gray-600"></tbody>
+                        </table>
+                    </div>
+                    <div id="pagination_container" class="hidden flex justify-between items-center px-5 py-3 border-t bg-gray-50 text-xs font-semibold text-[#003366]">
+                        <span id="page_info">Mostrando 0 - 0 de 0 registros</span>
+                        <div class="flex gap-2">
+                            <button class="btn-page" id="btn_prev">← Anterior</button>
+                            <button class="btn-page" id="btn_next">Siguiente →</button>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </section>
+    </main>
+
+    <!-- ══════════════════════ PÁGINA: DASHBOARD ══════════════════════ -->
+    <main id="page-dashboard" class="hidden container mx-auto max-w-6xl pt-10 px-6">
+        <div class="flex flex-col md:flex-row justify-between items-center mb-8 gap-4">
+            <h2 class="text-3xl font-bold text-[#003366]">Análisis de Actividad</h2>
+            <div class="flex flex-wrap items-center gap-4 p-4 bg-white rounded-xl shadow-sm border border-gray-100 my-6">
+                <button id="btn_report_pdf" class="flex-1 min-w-[180px] bg-red-600 text-white px-5 py-2.5 rounded-lg font-bold hover:bg-red-700 transition-all duration-300 shadow-sm flex items-center justify-center gap-2">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                    REPORTE PDF
+                </button>
+                <button disabled title="Acceda desde Google Drive con su cuenta institucional" class="flex-1 min-w-[180px] bg-green-700 text-white px-5 py-2.5 rounded-lg font-bold opacity-60 cursor-not-allowed flex items-center justify-center gap-2">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                    VER EN DRIVE (acceso interno)
+                </button>
+                <button id="btn_logout" class="px-5 py-2.5 border-2 border-gray-200 text-gray-500 font-bold rounded-lg hover:bg-gray-50 hover:border-gray-300 hover:text-gray-700 transition-all duration-200 flex items-center gap-2">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+                    SALIR
+                </button>
+                <div id="contenedor-pdf-temporal" style="display: none;"></div>
+            </div>
+        </div>
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+            <div class="bg-white p-6 rounded-xl shadow-sm border-l-8 border-blue-800 flex flex-col justify-between">
+                <h4 class="text-gray-500 text-xs font-bold uppercase">Total Vistas</h4>
+                <p id="stat-total-vis" class="text-4xl font-black text-blue-900 mt-2">0</p>
+            </div>
+            <div class="bg-white p-6 rounded-xl shadow-sm border-l-8 border-green-600 flex flex-col justify-between">
+                <h4 class="text-gray-500 text-xs font-bold uppercase">Total Descargas</h4>
+                <p id="stat-total-desc" class="text-4xl font-black text-green-700 mt-2">0</p>
+            </div>
+            <div class="bg-white p-6 rounded-xl shadow-sm border-l-8 border-purple-600 flex flex-col justify-between relative group">
+                <h4 class="text-gray-500 text-xs font-bold uppercase">Crecim. Mensual</h4>
+                <div class="flex items-center gap-2 mt-2">
+                    <p id="stat-growth" class="text-3xl font-black text-gray-400">N/A</p>
+                    <span id="stat-growth-icon" class="hidden text-sm font-bold px-2 py-1 rounded-full"></span>
+                </div>
+                <p class="text-[9px] text-gray-400 mt-2 leading-tight">*Esperando API Backend</p>
+            </div>
+            <div class="bg-white p-6 rounded-xl shadow-sm border-l-8 border-red-600 flex flex-col justify-between">
+                <h4 class="text-gray-400 text-xs font-bold uppercase">Sede Líder</h4>
+                <p id="stat-top-sede" class="text-xl font-bold text-gray-700 mt-2 leading-tight">---</p>
+            </div>
+        </div>
+        <div class="grid grid-cols-1 md:grid-cols-1 gap-8">
+            <div class="bg-white p-6 rounded-xl shadow-md overflow-x-auto">
+                <h4 class="text-[#003366] text-sm font-bold mb-4 uppercase">Visualizaciones por Intendencia</h4>
+                <div style="min-width: 600px; height: 300px;"><canvas id="chart-vis"></canvas></div>
+            </div>
+            <div class="bg-white p-6 rounded-xl shadow-md overflow-x-auto">
+                <h4 class="text-[#003366] text-sm font-bold mb-4 uppercase">Descargas por Intendencia</h4>
+                <div style="min-width: 600px; height: 300px;"><canvas id="chart-desc"></canvas></div>
+            </div>
+        </div>
+        <div id="audit-log-section" class="bg-white rounded-xl shadow-md p-6 mt-6 mb-8">
+            <h4 class="text-[#003366] text-sm font-bold mb-4 uppercase flex items-center gap-2">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/></svg>
+                Últimas Actividades
+            </h4>
+            <div class="overflow-x-auto">
+                <table class="w-full text-xs" id="audit-table">
+                    <thead>
+                        <tr class="bg-gray-50 text-[#003366] uppercase">
+                            <th class="px-4 py-2 text-left font-bold">Nro</th>
+                            <th class="px-4 py-2 text-left font-bold">Fecha y Hora</th>
+                            <th class="px-4 py-2 text-left font-bold">Intendencia</th>
+                            <th class="px-4 py-2 text-left font-bold">Acción</th>
+                        </tr>
+                    </thead>
+                    <tbody id="audit-tbody">
+                        <tr><td colspan="4" class="px-4 py-6 text-center text-gray-400">Cargando...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </main>
+
+    <!-- Modal de login -->
+    <div id="login-modal" class="hidden fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50">
+        <div class="bg-white p-8 rounded-3xl shadow-2xl w-full max-w-sm">
+            <h3 class="text-xl font-bold mb-6 text-center text-[#003366] uppercase">Acceso Restringido</h3>
+            <input type="text" id="admin-user" placeholder="Usuario" class="w-full mb-4 px-4 py-3 border rounded-xl outline-none focus:ring-2 focus:ring-[#003366]">
+            <input type="password" id="admin-pass" placeholder="Contraseña" class="w-full mb-6 px-4 py-3 border rounded-xl outline-none focus:ring-2 focus:ring-[#003366]">
+            <button id="btn_login_submit" class="w-full bg-[#003366] text-white py-4 rounded-xl font-bold hover:bg-blue-900 transition">INGRESAR</button>
+            <button id="btn_login_cancel" class="w-full mt-4 text-gray-400 text-sm hover:text-gray-600">Cancelar</button>
+        </div>
+    </div>
+
+    <footer class="w-full bg-white border-t border-gray-200 py-5 mt-auto">
+        <div class="container mx-auto px-6">
+            <div class="flex flex-col items-center justify-center gap-1.5">
+                <p class="text-[10px] md:text-xs text-gray-600 font-semibold tracking-widest uppercase text-center">
+                    &copy; 2026 SUNAFIL - Dirección de Inteligencia Inspectiva (DINI) - SDAN
+                </p>
+                <p class="text-[9px] text-gray-500 uppercase tracking-tighter text-center">
+                    Desarrollado por la Subdirección de Análisis - Equipo de IA &amp; Ciencia de Datos. El uso de esta herramienta es estrictamente institucional.
+                </p>
+            </div>
+        </div>
+    </footer>
+    <div id="toast-container" class="fixed bottom-4 right-4 z-50 flex flex-col gap-3"></div>
+
+    <script src="file-parser.js"></script>
+    <script src="sheets-api.js"></script>
+    <script src="processing-client.js"></script>
+    <script src="diagnostics.js"></script>
+    <script src="column-chooser.js"></script>
+    <script src="tr-analysis.js"></script>
+    <script src="tr-filters.js"></script>
+    <script src="tr-export.js"></script>
+    <script src="vendor/jszip.min.js"></script>
+    <script src="script.js"></script>
+    <script src="ruc.js"></script>
+    <!-- Sincroniza botones de vista Registros/Empresas con el select oculto que escucha ruc.js -->
+    <script>
+        document.addEventListener('DOMContentLoaded', function () {
+            var btnR = document.getElementById('ruc-view-records');
+            var btnC = document.getElementById('ruc-view-companies');
+            var sel = document.getElementById('ruc-view');
+            if (!btnR || !btnC || !sel) return;
+            function setView(v) {
+                sel.value = v;
+                sel.dispatchEvent(new Event('change'));
+                btnR.classList.toggle('active', v === 'records');
+                btnC.classList.toggle('active', v === 'companies');
+            }
+            btnR.addEventListener('click', function () { setView('records'); });
+            btnC.addEventListener('click', function () { setView('companies'); });
+        });
+    </script>
+</body>
+</html>

@@ -1,0 +1,32 @@
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const parser = require('../file-parser.js');
+const tr = require('../tr-analysis.js');
+const dataset = parser.parse('TR5: reporte\nNRO DE RUC: 20123456789\nTipo|Número|Apellido paterno|Nombres|Fec. Inicio|Establecimiento en el que labora|Tipo de Contrato\n01|00123|Perez|Ana|15/02/2024| Sede A |Contrato A\n01|00123|Perez|Ana|01/01/2020|Sede B|Contrato B\n01|00123|Perez|Ana|15/02/2024|Sede A|Contrato A\n01|00123|Perez|Ana|||\n01|00123|Perez|Ana|31/02/2024|Sede B|Contrato A', 'sample.txt');
+const person = tr.build([dataset]).people[0];
+const before = JSON.stringify(dataset.records);
+const history = tr.history(person);
+assert.equal(history.rows.length, 5);
+assert.equal(history.first, '2020-01-01'); assert.equal(history.latest, '2024-02-15');
+assert.equal(history.dates.length, 2); assert.equal(history.unresolvedDates, 2);
+assert.equal(history.establishments.length, 2); assert.equal(history.contracts.length, 2);
+assert.deepEqual(history.rows.map(r=>r.record.sourceRow), [5,4,6,7,8]);
+assert.equal(history.rows[1].establishment, ' Sede A ');
+assert.equal(JSON.stringify(dataset.records), before, 'No mutar datos ni orden original');
+assert.equal(tr.date('29/02/2024').iso, '2024-02-29');
+assert.equal(tr.date('29/02/2023').iso, null);
+assert.equal(tr.date('29/02/1900').iso, null);
+assert.equal(tr.date('2024-12-31').iso, '2024-12-31');
+assert.equal(tr.date('12/31/2024').iso, null);
+assert.equal(tr.date('0000-01-01').iso, null);
+assert.equal(tr.history({TR5:[]}).first, null);
+const missing = parser.parse('TR5: reporte\nTipo|Número|Apellido paterno|Nombres|Fecha Inicio\n01|1|A|B|01/01/2020', 'missing');
+assert.equal(tr.history(tr.build([missing]).people[0]).rows[0].diagnostic, 'Campo ausente', 'No asumir fecha ambigua');
+if (process.argv[2]) {
+    const data = parser.parse(parser.decode(fs.readFileSync(process.argv[2])).text, 'muestra');
+    const people = tr.build([data]).people;
+    const histories = people.map(p=>tr.history(p));
+    assert.equal(histories.reduce((n,h)=>n+h.rows.length,0),122);
+    console.log(`TR5 real: 122 filas conservadas en históricos; ${histories.reduce((n,h)=>n+h.unresolvedDates,0)} fechas sin interpretar.`);
+}
+console.log('OK: cronología, repeticiones, vacíos, fechas imposibles, años bisiestos, campos ausentes e integridad.');

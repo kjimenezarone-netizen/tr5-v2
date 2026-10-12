@@ -1,0 +1,35 @@
+const assert=require('node:assert/strict');
+const fs=require('node:fs');
+const parser=require('../file-parser.js');
+const tr=require('../tr-analysis.js');
+const make=(type,rows)=>parser.parse(`${type}: reporte\nNRO DE RUC: 20123456789\nTipo|Número|Apellido paterno|Nombres|Fec. Inicio|Extra|\n${rows}`,`${type}.txt`);
+const a=make('TR5','01|00123| A |Ana|01/01/2020||\n01|00123| A |Ana|02/01/2021|valor|\n01|00456|B|Bea|||');
+const b=make('TR6','01|00123| A |Ana|||');
+const analysis=tr.build([a,b]);
+const person=analysis.people[0], selected=new Set([person.id]);
+assert.equal(tr.scope(analysis,'selected',selected,[],null).length,1);
+assert.equal(tr.scope(analysis,'all',selected,[],null).length,2);
+assert.deepEqual(tr.scope(analysis,'filtered',selected,[analysis.people[1]],null),[analysis.people[1]]);
+assert.deepEqual(tr.scope(analysis,'individual',selected,[],person.id),[person]);
+assert.equal(tr.scope(analysis,'individual',selected,[],null).length,0);
+const sheets=tr.sheets(analysis,[person],{intendencia:'TEST',scope:'Seleccionados',query:'',filter:'Todos'});
+assert.deepEqual(sheets.map(s=>s.name),['Resumen','Trabajadores','Historico laboral','TR5 Original','TR6 Original','Fuentes']);
+assert.equal(sheets[2].rows.length,3);
+assert.equal(sheets[3].rows.length,3);
+assert.equal(sheets[4].rows.length,2);
+assert.equal(sheets[5].rows.length,4);
+assert.equal(sheets[3].rows[1][1],'00123');
+assert.equal(sheets[3].rows[1][2],' A ');
+assert.equal(sheets[3].rows[1][5],'');
+assert.equal(sheets[3].rows[0][6],'');
+a.records[0].rawCells[2]='Changed';
+assert.equal(sheets[3].rows[1][2],' A ','Previsualización independiente de cambios posteriores');
+if(process.argv.length>3){
+ const real=tr.build(process.argv.slice(2).map(path=>parser.parse(parser.decode(fs.readFileSync(path)).text,path)));
+ const all=tr.sheets(real,real.people,{});
+ assert.equal(all.find(s=>s.name==='TR5 Original').rows.length,123);
+ assert.equal(all.find(s=>s.name==='TR6 Original').rows.length,122);
+ assert.equal(all.find(s=>s.name==='Fuentes').rows.length,244);
+ console.log('Muestras: 121 trabajadores, 122 filas TR5 y 121 filas TR6 en exportación completa.');
+}
+console.log('OK: alcances, multiplicidad, histórico, originales, trazabilidad e instantánea de exportación.');
