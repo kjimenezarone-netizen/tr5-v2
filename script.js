@@ -181,24 +181,48 @@ const UI = {
     },
     renderInfoBox(data) {
         const container = document.getElementById('company_list');
-        if (!container) return;
+        const companyContainer = document.getElementById('company_container');
+        if (!container || !companyContainer) return;
 
-        const keyOrder = ['TR5', 'TR6', 'NRO DE RUC', 'NOMBRE, DENOMINACIÓN O RAZÓN SOCIAL', 'FECHA DE GENERACIÓN'];
+        const norm = str => String(str || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase();
+
+        // Orden canónico para el Resumen de la Entidad (cuadrícula 2x2):
+        // 1. Cabecera de reporte (TR5 / TR6)
+        // 2. RUC
+        // 3. Razón Social
+        // 4. Fecha de Generación
+        const matchers = [
+            k => norm(k).startsWith('TR5') || norm(k).startsWith('TR6'),
+            k => norm(k).includes('RUC'),
+            k => norm(k).includes('NOMBRE') || norm(k).includes('RAZON SOCIAL') || norm(k).includes('DENOMINACION'),
+            k => norm(k).includes('FECHA') || norm(k).includes('GENERACION')
+        ];
+
         const sortedEntries = [];
+        const usedKeys = new Set();
 
-        keyOrder.forEach(key => {
-            Object.entries(data).forEach(([k, v]) => {
-                if (k.includes(key) && !sortedEntries.find(entry => entry[0] === k)) {
+        matchers.forEach(matcher => {
+            for (const [k, v] of Object.entries(data)) {
+                if (!usedKeys.has(k) && !k.includes('|') && matcher(k)) {
                     sortedEntries.push([k, v]);
+                    usedKeys.add(k);
+                    break;
                 }
-            });
-        });
-
-        Object.entries(data).forEach(([k, v]) => {
-            if (!sortedEntries.find(entry => entry[0] === k)) {
-                sortedEntries.push([k, v]);
             }
         });
+
+        // Entradas adicionales de la cabecera que no contengan pipes (|) ni parezcan filas de trabajadores
+        Object.entries(data).forEach(([k, v]) => {
+            if (!usedKeys.has(k) && !k.includes('|') && !String(v).includes('|')) {
+                sortedEntries.push([k, v]);
+                usedKeys.add(k);
+            }
+        });
+
+        if (sortedEntries.length === 0) {
+            companyContainer.classList.add('hidden');
+            return;
+        }
 
         container.innerHTML = sortedEntries.map(([k, v]) => {
             let displayValue = v ? String(v).substring(0, 200) : '';
@@ -207,7 +231,7 @@ const UI = {
             return `<div style="margin-bottom: 8px;"><span class="text-[#003366] font-black" style="color: #003366; font-weight: bold;">${safeK}:</span> <span class="text-slate-600 font-medium" style="color: #475569;">${safeV}</span></div>`;
         }).join('');
 
-        document.getElementById('company_container').classList.remove('hidden');
+        companyContainer.classList.remove('hidden');
     },
     drawTable(rows, cols) {
         AppState.currentFilteredRows = rows;
@@ -329,7 +353,7 @@ const Core = {
             const result = await Processing.run('TR', files, message => { document.getElementById('tr-processing-status').textContent = message; });
             const { datasets, analysis, table: { rows, cols } } = result;
             const dataset = datasets[0];
-            UI.renderInfoBox(this.extractCompanyInfo(dataset.text.split(/\r\n|\n|\r/)));
+            UI.renderInfoBox(this.extractCompanyInfo(dataset.text.split(/\r\n|\n|\r/), dataset));
             AppState.trDatasets = datasets;
 
             AppState.globalRows = rows;
@@ -379,31 +403,52 @@ const Core = {
         clearTimeout(AppState.searchDebounceTimeout);
         const { rows, cols } = FileParser.table(dataset);
         AppState.sourceDataset = dataset; AppState.globalRows = rows; AppState.globalCols = cols;
-        UI.renderInfoBox(Core.extractCompanyInfo(dataset.text.split(/\r\n|\n|\r/)));
+        UI.renderInfoBox(Core.extractCompanyInfo(dataset.text.split(/\r\n|\n|\r/), dataset));
         document.getElementById('search_box').value = '';
         const select = document.getElementById('filter_columna');
         select.replaceChildren(...['', ...cols].map(c => { const option = document.createElement('option'); option.value = c; option.textContent = c || 'Todas las columnas'; return option; }));
         UI.drawTable(rows, cols); UI.renderFileMetricsAndFilters(rows);
     },
 
-    extractCompanyInfo(lines) {
+    extractCompanyInfo(linesOrDataset, maybeDataset) {
+        let lines = [];
+        let dataset = null;
+        if (Array.isArray(linesOrDataset)) {
+            lines = linesOrDataset;
+            dataset = maybeDataset || null;
+        } else if (linesOrDataset && typeof linesOrDataset === 'object') {
+            dataset = linesOrDataset;
+            lines = (dataset.text || '').split(/\r\n|\n|\r/);
+        } else if (typeof linesOrDataset === 'string') {
+            lines = linesOrDataset.split(/\r\n|\n|\r/);
+        }
+
         const info = {};
         let currentKey = "";
-        for (let i = 0; i < Math.min(30, lines.length); i++) {
-            const l = lines[i].trim();
-            if (!l || l.replace(/=/g, "").replace(/-/g, "").trim() === "") continue;
+        const maxLines = dataset?.headerRow ? Math.min(dataset.headerRow - 1, lines.length) : lines.length;
 
-            if (l.includes(":")) {
-                const colonIdx = l.indexOf(":");
+        for (let i = 0; i < maxLines; i++) {
+            const raw = lines[i];
+            const l = (raw || '').trim();
+            if (!l) continue;
+
+            // Al llegar a una línea separadora (=== o ---) o a cualquier fila tabular (con |),
+            // la sección de metadatos de cabecera termina y no debe procesarse nada más.
+            if (/^[=-]{3,}/.test(l) || l.includes('|')) {
+                break;
+            }
+
+            if (l.includes(':')) {
+                const colonIdx = l.indexOf(':');
                 const key = l.substring(0, colonIdx).trim();
                 let value = l.substring(colonIdx + 1).trim();
                 if (key && value && value.length > 0) {
-                    value = value.replace(/^"/, "").replace(/"$/, "").trim();
+                    value = value.replace(/^"/, '').replace(/"$/, '').trim();
                     info[key] = value;
                     currentKey = key;
                 }
-            } else if (currentKey && l && !l.includes("|") && !l.includes("\t")) {
-                info[currentKey] += " " + l;
+            } else if (currentKey && l && !l.includes('|') && !l.includes('\t')) {
+                info[currentKey] += ' ' + l;
             }
         }
         return info;
