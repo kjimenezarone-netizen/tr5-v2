@@ -310,12 +310,11 @@
                         <div id="file-info-container" class="hidden flex-col items-center gap-3 animate-fade-in w-full">
                             <!-- Tarjetas individuales por archivo cargado -->
                             <div id="file-cards" class="flex flex-wrap gap-3 justify-center w-full"></div>
-                            <button type="button" id="btn_clear_file" class="flex items-center gap-1 bg-red-100 text-red-600 px-3 py-1.5 rounded-full text-xs font-bold hover:bg-red-200 transition mt-1">
+                            <p id="file_status" class="text-xs font-bold text-slate-700 bg-slate-100 px-4 py-1.5 rounded-full border border-slate-200"></p>
+                            <button type="button" id="btn_clear_file" class="flex items-center gap-1.5 bg-red-50 text-red-600 border border-red-200 px-3.5 py-1.5 rounded-full text-xs font-bold hover:bg-red-100 transition mt-1">
                                 <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd"/></svg>
                                 Quitar archivo(s)
                             </button>
-                            <!-- Campo oculto para compatibilidad con código que lee file_status -->
-                            <span id="file_status" class="sr-only"></span>
                         </div>
                     </label>
                 </div>
@@ -475,7 +474,7 @@
                         <table class="ruc-table text-xs w-full">
                             <thead>
                                 <tr>
-                                    <th>N°</th><th>Seleccionar</th><th>Tipo documento</th><th>Número</th><th>Nombres registrados</th><th>TR5</th><th>TR6</th><th>Presencia</th><th>Observaciones</th><th>Ficha</th>
+                                    <th class="text-center" style="width: 50px;">N°</th><th class="text-center" style="width: 60px;">Sel.</th><th>Tipo documento</th><th>Número</th><th>Nombres registrados</th><th>TR5</th><th>TR6</th><th>Presencia</th><th>Observaciones</th><th>Ficha</th>
                                 </tr>
                             </thead>
                             <tbody id="tr-person-body"></tbody>
@@ -707,17 +706,17 @@
     </footer>
     <div id="toast-container" class="fixed bottom-4 right-4 z-50 flex flex-col gap-3"></div>
 
-    <script src="file-parser.js"></script>
-    <script src="sheets-api.js"></script>
-    <script src="processing-client.js"></script>
-    <script src="diagnostics.js"></script>
-    <script src="column-chooser.js"></script>
-    <script src="tr-analysis.js"></script>
-    <script src="tr-filters.js"></script>
-    <script src="tr-export.js"></script>
+    <script src="file-parser.js?v=2.3"></script>
+    <script src="sheets-api.js?v=2.3"></script>
+    <script src="processing-client.js?v=2.3"></script>
+    <script src="diagnostics.js?v=2.3"></script>
+    <script src="column-chooser.js?v=2.3"></script>
+    <script src="tr-analysis.js?v=2.3"></script>
+    <script src="tr-filters.js?v=2.3"></script>
+    <script src="tr-export.js?v=2.3"></script>
     <script src="vendor/jszip.min.js"></script>
-    <script src="script.js"></script>
-    <script src="ruc.js"></script>
+    <script src="script.js?v=2.3"></script>
+    <script src="ruc.js?v=2.3"></script>
     <!-- Sincroniza botones de vista Registros/Empresas con el select oculto que escucha ruc.js -->
     <script>
         document.addEventListener('DOMContentLoaded', function () {

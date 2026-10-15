@@ -195,13 +195,14 @@ const TRView = {
             if (person.hasMultipleTR5) row.classList.add('row-has-multiple');
 
             // Col 0: Nº correlativo
-            const tdNum = document.createElement('td');
-            tdNum.textContent = this.page * 50 + idx + 1;
-            tdNum.className = 'text-center text-gray-400 font-mono text-xs select-none';
-            row.appendChild(tdNum);
+            const tdIndex = document.createElement('td');
+            tdIndex.textContent = this.page * 50 + idx + 1;
+            tdIndex.className = 'text-center text-gray-600 font-mono text-xs font-semibold select-none';
+            row.appendChild(tdIndex);
 
             // Col 1: Checkbox
             const selectCell = document.createElement('td');
+            selectCell.className = 'text-center';
             const checkbox = document.createElement('input');
             checkbox.type = 'checkbox';
             checkbox.checked = this.selected.has(person.id);
@@ -221,10 +222,10 @@ const TRView = {
             row.appendChild(tdType);
 
             // Col 3: Número Doc (con font mono para inspectores)
-            const tdNum = document.createElement('td');
-            tdNum.className = 'font-mono font-bold';
-            tdNum.textContent = person.number;
-            row.appendChild(tdNum);
+            const tdDocNum = document.createElement('td');
+            tdDocNum.className = 'font-mono font-bold';
+            tdDocNum.textContent = person.number;
+            row.appendChild(tdDocNum);
 
             // Col 4: Nombres
             const tdNames = document.createElement('td');

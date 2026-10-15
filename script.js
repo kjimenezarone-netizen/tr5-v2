@@ -148,38 +148,44 @@ const UI = {
         const labelDefault = document.getElementById('label-content-default');
         const infoContainer = document.getElementById('file-info-container');
         const fileCards = document.getElementById('file-cards');
+        const status = document.getElementById('file_status');
 
         if (fileInput.files.length > 0) {
             labelDefault.classList.add('hidden');
             infoContainer.classList.remove('hidden');
             infoContainer.classList.add('flex');
 
+            const files = [...fileInput.files];
             // Crear tarjetas individuales por archivo
             if (fileCards) {
-                fileCards.innerHTML = [...fileInput.files].map(f => {
+                fileCards.innerHTML = files.map(f => {
                     // Detectar tipo por nombre
                     const upper = f.name.toUpperCase();
-                    const isTR5 = upper.includes('TR5') || upper.endsWith('.TXT') && !upper.includes('TR6');
                     const isTR6 = upper.includes('TR6');
-                    const typeLabel = isTR6 ? 'TR6' : 'TR5';
-                    const badgeColor = isTR6 ? 'bg-emerald-100 text-emerald-800 border-emerald-300' : 'bg-blue-100 text-blue-800 border-blue-300';
+                    const isTR5 = upper.includes('TR5') || (!isTR6 && upper.endsWith('.TXT'));
+                    const typeLabel = isTR6 ? 'TR6' : (isTR5 ? 'TR5' : 'TXT');
+                    const badgeColor = isTR6 ? 'bg-emerald-50 text-emerald-800 border-emerald-300' : 'bg-blue-50 text-blue-800 border-blue-300';
                     const iconColor = isTR6 ? 'text-emerald-600' : 'text-blue-600';
                     const sizekb = (f.size / 1024).toFixed(0);
-                    const shortName = f.name.length > 35 ? f.name.substring(0, 32) + '...' : f.name;
-                    return `<div class="flex items-center gap-3 px-4 py-2.5 rounded-xl border ${badgeColor} shadow-sm min-w-[200px]">
-                        <svg xmlns="http://www.w3.org/2000/svg" class="h-7 w-7 ${iconColor}" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
-                        <div class="flex flex-col">
+                    const shortName = f.name.length > 40 ? f.name.substring(0, 37) + '...' : f.name;
+                    return `<div class="flex items-center gap-3 px-4 py-2.5 rounded-xl border ${badgeColor} shadow-sm bg-white min-w-[220px]">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-7 w-7 ${iconColor} flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+                        <div class="flex flex-col text-left">
                             <span class="text-xs font-black uppercase tracking-wider">${typeLabel}</span>
-                            <span class="text-xs font-semibold">${shortName}</span>
+                            <span class="text-xs font-semibold text-gray-800 break-all">${shortName}</span>
                             <span class="text-[10px] text-gray-500">${sizekb} KB</span>
                         </div>
                     </div>`;
                 }).join('');
             }
 
-            // Actualizar file_status con texto plano para compatibilidad
-            const status = document.getElementById('file_status');
-            if (status) status.textContent = `SELECCIONADOS: ${[...fileInput.files].map(f => f.name).join(' + ')}`;
+            // Actualizar file_status con texto visible
+            if (status) {
+                const count = files.length;
+                status.textContent = count === 1
+                    ? `1 archivo listo: ${files[0].name}`
+                    : `${count} archivos listos: ${files.map(f => f.name).join(' + ')}`;
+            }
         }
     },
     clearFile(event) {
@@ -190,8 +196,12 @@ const UI = {
         const fileInput = document.getElementById('file_input');
         const labelDefault = document.getElementById('label-content-default');
         const infoContainer = document.getElementById('file-info-container');
+        const fileCards = document.getElementById('file-cards');
+        const status = document.getElementById('file_status');
 
         fileInput.value = "";
+        if (fileCards) fileCards.innerHTML = '';
+        if (status) status.textContent = '';
         labelDefault.classList.remove('hidden');
         infoContainer.classList.add('hidden');
         infoContainer.classList.remove('flex');
@@ -408,20 +418,27 @@ const Core = {
             if (fileCards) {
                 fileCards.innerHTML = datasets.map(d => {
                     const isTR6 = d.type === 'TR6';
-                    const badgeColor = isTR6 ? 'bg-emerald-100 text-emerald-800 border-emerald-300' : 'bg-blue-100 text-blue-800 border-blue-300';
+                    const badgeColor = isTR6 ? 'bg-emerald-50 text-emerald-800 border-emerald-300' : 'bg-blue-50 text-blue-800 border-blue-300';
                     const iconColor = isTR6 ? 'text-emerald-600' : 'text-blue-600';
                     const diag = d.diagnostics.length > 0 ? `<span class="text-[10px] text-amber-700">⚠️ ${d.diagnostics.length} filas con columnas disparejas</span>` : '';
-                    return `<div class="flex items-center gap-3 px-4 py-2.5 rounded-xl border ${badgeColor} shadow-sm">
-                        <svg xmlns="http://www.w3.org/2000/svg" class="h-7 w-7 ${iconColor}" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
-                        <div class="flex flex-col">
-                            <span class="text-xs font-black uppercase tracking-wider">${d.type}</span>
-                            <span class="text-xs font-semibold">${d.records.length} trabajadores · ${d.columns.length} columnas</span>
+                    const shortFile = (d.sourceFile || '').length > 40 ? d.sourceFile.substring(0, 37) + '...' : (d.sourceFile || '');
+                    return `<div class="flex items-center gap-3 px-4 py-2.5 rounded-xl border ${badgeColor} shadow-sm bg-white min-w-[220px]">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-7 w-7 ${iconColor} flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+                        <div class="flex flex-col text-left">
+                            <div class="flex items-center gap-2">
+                                <span class="text-xs font-black uppercase tracking-wider">${d.type}</span>
+                                <span class="text-[11px] font-medium text-gray-500">${shortFile}</span>
+                            </div>
+                            <span class="text-xs font-bold text-gray-800">${d.records.length} trabajadores · ${d.columns.length} columnas</span>
                             ${diag}
                         </div>
                     </div>`;
                 }).join('');
             }
-            document.getElementById('file_status').textContent = datasets.map(d => `${d.type}: ${d.records.length} registros · ${d.columns.length} columnas`).join(' / ');
+            const status = document.getElementById('file_status');
+            if (status) {
+                status.textContent = datasets.map(d => `${d.type}: ${d.records.length} registros`).join(' · ');
+            }
             const sourceSelect = document.getElementById('tr-source-select');
             sourceSelect.replaceChildren(...datasets.map((d, i) => { const option = document.createElement('option'); option.value = String(i); option.textContent = `${d.type} — ${d.sourceFile}`; return option; }));
             TRView.set(analysis);
