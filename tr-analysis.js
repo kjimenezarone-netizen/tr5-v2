@@ -190,9 +190,15 @@ const TRView = {
         this.page = Math.max(0, Math.min(this.page, Math.ceil(people.length / 50) - 1));
         el('tr-person-summary').textContent = `${this.analysis.people.length} identidades · ${people.length} visibles · ${this.analysis.datasets.reduce((n,d) => n + d.records.length, 0)} registros originales · ${this.analysis.paired ? 'Cruce validado por RUC' : 'Un reporte'}`;
         
-        el('tr-person-body').replaceChildren(...people.slice(this.page * 50, this.page * 50 + 50).map(person => {
+        el('tr-person-body').replaceChildren(...people.slice(this.page * 50, this.page * 50 + 50).map((person, idx) => {
             const row = document.createElement('tr');
             if (person.hasMultipleTR5) row.classList.add('row-has-multiple');
+
+            // Col 0: Nº correlativo
+            const tdNum = document.createElement('td');
+            tdNum.textContent = this.page * 50 + idx + 1;
+            tdNum.className = 'text-center text-gray-400 font-mono text-xs select-none';
+            row.appendChild(tdNum);
 
             // Col 1: Checkbox
             const selectCell = document.createElement('td');
@@ -283,6 +289,9 @@ const TRView = {
         el('tr-person-page').textContent = people.length ? `Página ${this.page + 1} de ${Math.ceil(people.length / 50)}` : 'Sin resultados';
         el('tr-person-prev').disabled = this.page === 0;
         el('tr-person-next').disabled = (this.page + 1) * 50 >= people.length;
+
+        // Sincronizar desplegable de exportación dinámico
+        if (typeof TRExport !== 'undefined') TRExport.syncScopeOptions();
     },
     detail(person) {
         this.current = person.id;

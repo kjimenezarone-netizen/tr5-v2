@@ -42,18 +42,46 @@ const TRFilterUI = {
     draw() {
         const list=document.getElementById('tr-active-filters');
         list.replaceChildren(...this.descriptions().map((description,i)=>{
-            const li=document.createElement('li'),label=document.createElement('span'),button=document.createElement('button');
-            label.textContent=description;button.textContent='Quitar';button.className='border rounded px-2 ml-3';button.setAttribute('aria-label',`Quitar filtro ${description}`);
-            button.addEventListener('click',()=>{this.rules.splice(i,1);this.changed();});li.append(label,button);return li;
+            const li=document.createElement('li');
+            li.className='filter-chip-item';
+            li.innerHTML=`<span class="filter-chip-label">${description}</span>`;
+            const button=document.createElement('button');
+            button.innerHTML='&times;';
+            button.className='filter-chip-remove';
+            button.title=`Quitar filtro: ${description}`;
+            button.setAttribute('aria-label',`Quitar filtro ${description}`);
+            button.addEventListener('click',()=>{this.rules.splice(i,1);this.changed();});
+            li.appendChild(button);
+            return li;
         }));
-        document.getElementById('tr-filter-count').textContent=this.rules.length ? `${this.rules.length} filtros avanzados activos (Y)` : 'Sin filtros avanzados';
+        document.getElementById('tr-filter-count').textContent=this.rules.length
+            ? `${this.rules.length} filtro${this.rules.length>1?'s':''} activo${this.rules.length>1?'s':''}`
+            : '';
+        // Sincronizar el desplegable de exportación dinámico
+        if(typeof TRExport!=='undefined') TRExport.syncScopeOptions();
     },
     changed() { this.draw(); TRExport.invalidate(); TRView.page=0; TRView.render(); },
     controls() {
         const op=document.getElementById('tr-filter-operator').value;
-        const value=document.getElementById('tr-filter-value'),end=document.getElementById('tr-filter-end');
-        value.type=['from','to','between','dateEquals'].includes(op)?'date':'text';
-        value.disabled=['empty','notEmpty'].includes(op);end.disabled=op!=='between';
+        const valueWrap=document.getElementById('tr-filter-value-wrap');
+        const endWrap=document.getElementById('tr-filter-end-wrap');
+        const value=document.getElementById('tr-filter-value');
+        const end=document.getElementById('tr-filter-end');
+
+        const isDateOp=['from','to','between','dateEquals'].includes(op);
+        const isNoValueOp=['empty','notEmpty'].includes(op);
+        const isBetween=op==='between';
+
+        // Tipo de input de valor
+        value.type=isDateOp?'date':'text';
+
+        // Ocultar campo valor si no aplica
+        if(valueWrap) valueWrap.classList.toggle('hidden', isNoValueOp);
+        value.disabled=isNoValueOp;
+
+        // Mostrar campo "hasta" solo para "entre"
+        if(endWrap) endWrap.classList.toggle('hidden', !isBetween);
+        end.disabled=!isBetween;
     },
     add() {
         const el=id=>document.getElementById(id),field=this.fields[Number(el('tr-filter-field').value)];

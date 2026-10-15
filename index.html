@@ -307,12 +307,15 @@
                             <p id="file_label" class="text-gray-500 font-semibold">Haga clic aquí o arrastre su archivo TXT</p>
                             <p class="text-xs text-gray-400">Puede seleccionar un TR5 y un TR6 de la misma empresa</p>
                         </div>
-                        <div id="file-info-container" class="hidden flex-col items-center gap-2 animate-fade-in">
-                            <span id="file_status" class="text-green-600 font-bold uppercase text-sm"></span>
-                            <button type="button" id="btn_clear_file" class="flex items-center gap-1 bg-red-100 text-red-600 px-3 py-1.5 rounded-full text-xs font-bold hover:bg-red-200 transition">
+                        <div id="file-info-container" class="hidden flex-col items-center gap-3 animate-fade-in w-full">
+                            <!-- Tarjetas individuales por archivo cargado -->
+                            <div id="file-cards" class="flex flex-wrap gap-3 justify-center w-full"></div>
+                            <button type="button" id="btn_clear_file" class="flex items-center gap-1 bg-red-100 text-red-600 px-3 py-1.5 rounded-full text-xs font-bold hover:bg-red-200 transition mt-1">
                                 <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd"/></svg>
-                                Quitar archivo
+                                Quitar archivo(s)
                             </button>
+                            <!-- Campo oculto para compatibilidad con código que lee file_status -->
+                            <span id="file_status" class="sr-only"></span>
                         </div>
                     </label>
                 </div>
@@ -430,10 +433,9 @@
                         </summary>
                         <div class="px-6 pb-5 pt-4">
                             <h4 id="tr-filter-title" class="sr-only">Filtros avanzados</h4>
-                            <p class="text-xs text-gray-500 mb-4">Todos los filtros deben cumplirse. Las condiciones de un mismo reporte se evalúan sobre una misma fila; si combina TR5 y TR6, debe existir una fila coincidente en cada reporte. Se muestran los trabajadores encontrados con todos sus registros.</p>
                             <div class="flex flex-wrap gap-3 items-end">
-                                <div class="min-w-[150px]">
-                                    <label for="tr-filter-field" class="form-label">Campo</label>
+                                <div class="min-w-[200px] flex-1">
+                                    <label for="tr-filter-field" class="form-label">Campo a filtrar</label>
                                     <select id="tr-filter-field" class="form-select"></select>
                                 </div>
                                 <div class="min-w-[160px]">
@@ -443,29 +445,28 @@
                                         <option value="equals">Igual a</option>
                                         <option value="notEquals">Distinto de</option>
                                         <option value="starts">Empieza por</option>
-                                        <option value="empty">Vacío</option>
-                                        <option value="notEmpty">Con información</option>
+                                        <option value="empty">Está vacío</option>
+                                        <option value="notEmpty">Tiene información</option>
                                         <option value="dateEquals">Fecha igual a</option>
-                                        <option value="from">Fecha desde (inclusive)</option>
-                                        <option value="to">Fecha hasta (inclusive)</option>
-                                        <option value="between">Fecha entre (inclusive)</option>
+                                        <option value="from">Fecha desde</option>
+                                        <option value="to">Fecha hasta</option>
+                                        <option value="between">Fecha entre</option>
                                     </select>
                                 </div>
-                                <div class="min-w-[140px]">
-                                    <label for="tr-filter-value" class="form-label">Valor o fecha inicial</label>
-                                    <input id="tr-filter-value" type="text" class="form-input">
+                                <div id="tr-filter-value-wrap" class="min-w-[140px]">
+                                    <label for="tr-filter-value" class="form-label">Valor</label>
+                                    <input id="tr-filter-value" type="text" class="form-input" placeholder="Ej: PEON, 01/01/2025…">
                                 </div>
-                                <div class="min-w-[140px]">
-                                    <label for="tr-filter-end" class="form-label">Fecha final</label>
+                                <div id="tr-filter-end-wrap" class="min-w-[140px] hidden">
+                                    <label for="tr-filter-end" class="form-label">Hasta</label>
                                     <input id="tr-filter-end" type="date" disabled class="form-input">
                                 </div>
                                 <div class="flex gap-2">
                                     <button id="tr-filter-add" class="btn-primary text-sm py-2 px-4 rounded-lg">Agregar filtro</button>
-                                    <button id="tr-filter-clear" class="btn-ghost text-sm">Limpiar</button>
+                                    <button id="tr-filter-clear" class="btn-ghost text-sm">Limpiar todo</button>
                                 </div>
                             </div>
-                            <p class="text-xs text-gray-400 mt-3">Texto: sin distinguir mayúsculas ni tildes. Fechas: dd/mm/aaaa o aaaa-mm-dd. Campos ausentes y fechas inválidas no coinciden con condiciones de fecha.</p>
-                            <p id="tr-filter-count" role="status" class="text-xs font-semibold text-[#003366] mt-2"></p>
+                            <p id="tr-filter-count" role="status" class="text-xs font-semibold text-[#003366] mt-3"></p>
                             <ul id="tr-active-filters" class="filter-chips mt-2"></ul>
                         </div>
                     </details>
@@ -474,7 +475,7 @@
                         <table class="ruc-table text-xs w-full">
                             <thead>
                                 <tr>
-                                    <th>Seleccionar</th><th>Tipo documento</th><th>Número</th><th>Nombres registrados</th><th>TR5</th><th>TR6</th><th>Presencia</th><th>Observaciones</th><th>Ficha</th>
+                                    <th>N°</th><th>Seleccionar</th><th>Tipo documento</th><th>Número</th><th>Nombres registrados</th><th>TR5</th><th>TR6</th><th>Presencia</th><th>Observaciones</th><th>Ficha</th>
                                 </tr>
                             </thead>
                             <tbody id="tr-person-body"></tbody>
@@ -504,17 +505,17 @@
                         <h4 id="tr-export-title" class="sr-only">Centro de exportación TR5/TR6</h4>
                         <div class="flex flex-wrap gap-4 items-end">
                             <div class="flex-1 min-w-[220px]">
-                                <label for="tr-export-scope" class="form-label">Alcance</label>
+                                <label for="tr-export-scope" class="form-label">¿Qué desea exportar?</label>
                                 <select id="tr-export-scope" class="form-select">
-                                    <option value="all">Completo: todos los trabajadores</option>
-                                    <option value="filtered">Trabajadores filtrados</option>
-                                    <option value="selected">Trabajadores seleccionados</option>
-                                    <option value="individual">Trabajador de la última ficha abierta</option>
+                                    <option value="all">📄 Todos los trabajadores</option>
+                                    <option value="filtered" id="tr-scope-filtered" class="hidden">🔍 Solo resultado filtrado</option>
+                                    <option value="selected" id="tr-scope-selected" class="hidden">☑️ Solo seleccionados</option>
+                                    <option value="individual" id="tr-scope-individual" class="hidden">👤 Trabajador de la ficha abierta</option>
                                 </select>
                             </div>
                             <button id="tr-export-prepare" class="btn-primary py-2.5 px-5 text-white font-bold rounded-xl">Previsualizar Excel</button>
                         </div>
-                        <p class="text-xs text-gray-500 mt-3">Cada alcance incluye todas las filas TR5/TR6 de los trabajadores incluidos. Solo «Trabajadores filtrados» aplica la búsqueda y filtro de esta vista. Los filtros de la tabla de registros inferior son independientes.</p>
+                        <p id="tr-export-hint" class="text-xs text-gray-500 mt-3">Se exportarán todos los trabajadores del reporte con sus filas completas de TR5 y TR6.</p>
                         <div id="tr-export-preview" class="hidden mt-5 pt-5 border-t" aria-live="polite">
                             <p id="tr-export-summary" class="font-bold text-sm mb-3 text-[#003366]"></p>
                             <ul id="tr-export-sheets" class="sheets-list mb-3"></ul>

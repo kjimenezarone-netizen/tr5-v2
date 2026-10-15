@@ -5,6 +5,52 @@ const TRExport = {
         document.getElementById('tr-export-preview').classList.add('hidden');
         document.getElementById('tr-export-download').disabled = true;
     },
+    syncScopeOptions() {
+        // Calcula el estado actual para mostrar/ocultar opciones del desplegable
+        const hasSearch = (document.getElementById('tr-person-search')?.value || '').trim() !== '';
+        const hasFilter = document.getElementById('tr-person-filter')?.value !== 'all';
+        const hasAdvanced = TRFilterUI.rules.length > 0;
+        const hasSelected = TRView.selected && TRView.selected.size > 0;
+        const hasCurrent = !!TRView.current;
+
+        const setOption = (id, visible, labelSuffix = '') => {
+            const opt = document.getElementById(id);
+            if (!opt) return;
+            if (visible) {
+                opt.classList.remove('hidden');
+                opt.disabled = false;
+                if (labelSuffix) opt.textContent = opt.textContent.replace(/ \(.*\)$/, '') + ` (${labelSuffix})`;
+            } else {
+                opt.classList.add('hidden');
+                opt.disabled = true;
+                // Si esta opción estaba seleccionada, volver a "todos"
+                const scope = document.getElementById('tr-export-scope');
+                if (scope && scope.value === opt.value) scope.value = 'all';
+            }
+        };
+
+        const filteredCount = TRView.filtered ? TRView.filtered.length : 0;
+        const selectedCount = TRView.selected ? TRView.selected.size : 0;
+
+        setOption('tr-scope-filtered', hasSearch || hasFilter || hasAdvanced,
+            filteredCount > 0 ? `${filteredCount} trabajadores` : null);
+        setOption('tr-scope-selected', hasSelected,
+            selectedCount > 0 ? `${selectedCount} marcados` : null);
+        setOption('tr-scope-individual', hasCurrent);
+
+        // Actualizar hint según opción seleccionada
+        const scope = document.getElementById('tr-export-scope');
+        const hint = document.getElementById('tr-export-hint');
+        if (scope && hint) {
+            const hints = {
+                all: 'Se exportarán todos los trabajadores del reporte con sus filas completas de TR5 y TR6.',
+                filtered: 'Se exportarán solo los trabajadores que coinciden con la búsqueda y filtros activos.',
+                selected: 'Se exportarán solo los trabajadores que tiene marcados con el checkbox.',
+                individual: 'Se exportará únicamente el trabajador cuya ficha está abierta actualmente.'
+            };
+            hint.textContent = hints[scope.value] || hints.all;
+        }
+    },
     preview() {
         this.invalidate();
         if (!UI.requireIntendencia() || AppState.trBusy) return;
@@ -63,9 +109,16 @@ const TRExport = {
     }
 };
 document.addEventListener('DOMContentLoaded',()=>{
-    ['tr-export-scope','intendencia'].forEach(id=>document.getElementById(id).addEventListener('change',()=>TRExport.invalidate()));
+    ['tr-export-scope','intendencia'].forEach(id=>{
+        const el = document.getElementById(id);
+        if (el) el.addEventListener('change',()=>{
+            TRExport.invalidate();
+            TRExport.syncScopeOptions();
+        });
+    });
     document.getElementById('tr-export-prepare').addEventListener('click',()=>TRExport.preview());
     document.getElementById('tr-export-download').addEventListener('click',()=>TRExport.download());
     const directBtn = document.getElementById('tr-direct-download-excel');
     if (directBtn) directBtn.addEventListener('click', () => TRExport.quickDownload());
 });
+

@@ -828,3 +828,65 @@ html.dark-mode .quick-finding-card .qf-label {
     color: #94a3b8;
 }
 
+/* ═══ Chips de filtros avanzados activos ═══ */
+.filter-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+.filter-chip-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: #eff6ff;
+    border: 1px solid #bfdbfe;
+    border-radius: 999px;
+    padding: 3px 10px 3px 12px;
+    font-size: 11px;
+    color: #1d4ed8;
+    font-weight: 600;
+}
+.filter-chip-label {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 260px;
+}
+.filter-chip-remove {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: #bfdbfe;
+    color: #1d4ed8;
+    font-size: 13px;
+    font-weight: bold;
+    line-height: 1;
+    cursor: pointer;
+    border: none;
+    padding: 0;
+    transition: background 0.15s;
+    flex-shrink: 0;
+}
+.filter-chip-remove:hover {
+    background: #1d4ed8;
+    color: white;
+}
+html.dark-mode .filter-chip-item {
+    background: rgba(59,130,246,0.15);
+    border-color: rgba(59,130,246,0.4);
+    color: #93c5fd;
+}
+html.dark-mode .filter-chip-remove {
+    background: rgba(59,130,246,0.3);
+    color: #93c5fd;
+}
+html.dark-mode .filter-chip-remove:hover {
+    background: #3b82f6;
+    color: white;
+}
