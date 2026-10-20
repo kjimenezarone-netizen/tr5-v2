@@ -1,4 +1,4 @@
-importScripts('file-parser.js', 'tr-analysis.js', 'vendor/jszip.min.js', 'ruc.js');
+importScripts('file-parser.js?v=2.4', 'tr-analysis.js?v=2.4', 'vendor/jszip.min.js', 'ruc.js?v=2.4');
 const progress = message => postMessage({event:'progress',message});
 async function dataset(file, name) {
     progress(`Leyendo y detectando: ${name}`);
@@ -31,25 +31,38 @@ self.onmessage=async ({data})=>{
         }else if(data.kind==='RUC'){
             const sources=[],issues=[];let rejectedSources=0;
             for(let i=0;i<data.files.length;i++){
-                const file=data.files[i];progress(`ZIP ${i+1} de ${data.files.length}: ${file.name}`);
+                const file=data.files[i];progress(`Archivo ${i+1} de ${data.files.length}: ${file.name}`);
                 try{
-                    if(!/\.zip$/i.test(file.name))throw new Error('El archivo no tiene extensión ZIP.');
-                    if(file.size>20*1024*1024)throw new Error('El ZIP supera 20 MB.');
-                    const zip=await JSZip.loadAsync(await file.arrayBuffer());
-                    const entries=Object.values(zip.files).filter(e=>!e.dir && /\.txt$/i.test(e.name));
-                    if(!entries.length)throw new Error('El ZIP no contiene TXT.');
-                    for(const entry of entries){
-                        try{
-                            progress(`Extrayendo: ${entry.name}`);
-                            const decoded=FileParser.decode(await extract(entry));
-                            progress(`Interpretando: ${entry.name}`);
-                            const parsed=FileParser.parse(decoded.text,entry.name);parsed.encoding=decoded.encoding;
-                            if(parsed.type!=='RUC')throw new Error('El TXT no corresponde a resultados RUC.');
-                            sources.push({zipId:i,zipName:file.name,entryName:entry.name,originalFile:file,encoding:decoded.encoding,dataset:parsed});
-                            parsed.diagnostics.forEach(d=>issues.push(`${file.name} / ${entry.name}: fila ${d.sourceRow}, ${d.actual} columnas (encabezado: ${d.expected}). Se conservó la fila.`));
-                            const invalid=parsed.records.filter(r=>!/^\d{11}$/.test(r.rawCells[0].trim())).length;
-                            if(invalid)issues.push(`${file.name} / ${entry.name}: ${invalid} registros sin RUC de 11 dígitos, conservados sin consolidar.`);
-                        }catch(error){rejectedSources++;issues.push(`${file.name} / ${entry.name}: ${error.message}`);}
+                    if(/\.txt$/i.test(file.name)){
+                        if(file.size>20*1024*1024)throw new Error('El TXT supera 20 MB.');
+                        progress(`Interpretando: ${file.name}`);
+                        const decoded=FileParser.decode(await file.arrayBuffer());
+                        const parsed=FileParser.parse(decoded.text,file.name);parsed.encoding=decoded.encoding;
+                        if(parsed.type!=='RUC')throw new Error('El TXT no corresponde a resultados RUC.');
+                        sources.push({zipId:i,zipName:file.name,entryName:file.name,originalFile:file,encoding:decoded.encoding,dataset:parsed});
+                        parsed.diagnostics.forEach(d=>issues.push(`${file.name}: fila ${d.sourceRow}, ${d.actual} columnas (encabezado: ${d.expected}). Se conservó la fila.`));
+                        const invalid=parsed.records.filter(r=>!/^\d{11}$/.test(r.rawCells[0].trim())).length;
+                        if(invalid)issues.push(`${file.name}: ${invalid} registros sin RUC de 11 dígitos, conservados sin consolidar.`);
+                    }else if(/\.zip$/i.test(file.name)){
+                        if(file.size>20*1024*1024)throw new Error('El ZIP supera 20 MB.');
+                        const zip=await JSZip.loadAsync(await file.arrayBuffer());
+                        const entries=Object.values(zip.files).filter(e=>!e.dir && /\.txt$/i.test(e.name));
+                        if(!entries.length)throw new Error('El ZIP no contiene TXT.');
+                        for(const entry of entries){
+                            try{
+                                progress(`Extrayendo: ${entry.name}`);
+                                const decoded=FileParser.decode(await extract(entry));
+                                progress(`Interpretando: ${entry.name}`);
+                                const parsed=FileParser.parse(decoded.text,entry.name);parsed.encoding=decoded.encoding;
+                                if(parsed.type!=='RUC')throw new Error('El TXT no corresponde a resultados RUC.');
+                                sources.push({zipId:i,zipName:file.name,entryName:entry.name,originalFile:file,encoding:decoded.encoding,dataset:parsed});
+                                parsed.diagnostics.forEach(d=>issues.push(`${file.name} / ${entry.name}: fila ${d.sourceRow}, ${d.actual} columnas (encabezado: ${d.expected}). Se conservó la fila.`));
+                                const invalid=parsed.records.filter(r=>!/^\d{11}$/.test(r.rawCells[0].trim())).length;
+                                if(invalid)issues.push(`${file.name} / ${entry.name}: ${invalid} registros sin RUC de 11 dígitos, conservados sin consolidar.`);
+                            }catch(error){rejectedSources++;issues.push(`${file.name} / ${entry.name}: ${error.message}`);}
+                        }
+                    }else{
+                        throw new Error('Formato no compatible. Seleccione archivos TXT o ZIP.');
                     }
                 }catch(error){rejectedSources++;issues.push(`${file.name}: ${error.message}`);}
             }

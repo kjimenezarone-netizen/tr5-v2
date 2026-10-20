@@ -64,6 +64,14 @@ async function readZip(bytes, zipName) {
     const identical = model.consolidate([sources[0], sources[0]]);
     assert.equal(identical.records.length, 4);
     assert.equal(identical.differences.size, 0);
+    // Test: TXT directo sin comprimir
+    const directTxtParsed = parser.parse('NumeroRuc|Nombre|Estado|\n20987654321|Empresa Directa TXT|ACTIVO|\n', 'directo.txt');
+    const directSource = { zipId: 2, zipName: 'directo.txt', entryName: 'directo.txt', encoding: 'utf-8', dataset: directTxtParsed };
+    const mixed = model.consolidate([...sources, directSource]);
+    assert.equal(mixed.records.length, 4, 'El TXT directo se consolida sin perder registros ni columnas');
+    assert.equal(mixed.records[3].rawCells[1], 'Empresa Directa TXT');
+    assert.equal(mixed.records[3].rawCells[2], 'ACTIVO');
+    assert.equal(mixed.records[3].rawCells.join('|'), mixed.records[3].rawLine, 'Línea e integridad intactas');
     await assert.rejects(JSZip.loadAsync(Buffer.from('not a ZIP')));
     if (process.argv[2]) {
         const actual = model.consolidate(await readZip(fs.readFileSync(process.argv[2]), 'muestra.zip'));
@@ -75,5 +83,5 @@ async function readZip(bytes, zipName) {
         actual.records.forEach(r => assert.equal(r.rawCells.join('|'), r.rawLine));
         console.log(`ZIP real: ${actual.records.length} registros y ${actual.groups.size} RUC únicos; líneas originales verificadas.`);
     }
-    console.log('OK: multi-ZIP, TXT homónimos, repetidos, diferencias, campos adicionales, vacíos y ZIP inválido.');
+    console.log('OK: multi-ZIP, TXT directo, TXT homónimos, repetidos, diferencias, campos adicionales, vacíos y ZIP inválido.');
 })().catch(error => { console.error(error); process.exitCode = 1; });

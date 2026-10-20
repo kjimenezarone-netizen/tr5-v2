@@ -8,10 +8,12 @@
     }
     function parse(text, sourceFile = '') {
         const lines = text.split(/\r\n|\n|\r/);
-        const type = /^\s*(TR[56]):/i.exec(lines[0])?.[1].toUpperCase()
-            || (key(lines[0].split('|')[0]) === 'NUMERORUC' ? 'RUC' : null);
+        const firstLine = lines.find(l => l.trim().length > 0) || '';
+        const firstCell = key(firstLine.split('|')[0]).replace(/\s+/g, '');
+        const isRuc = firstCell === 'NUMERORUC' || firstCell === 'RUC';
+        const type = /^\s*(TR[56]):/i.exec(firstLine)?.[1].toUpperCase() || (isRuc ? 'RUC' : null);
         if (!type) throw new Error('Formato no reconocido. No se ha interpretado el archivo.');
-        const headerIndex = type === 'RUC' ? 0 : lines.findIndex(line => {
+        const headerIndex = type === 'RUC' ? lines.findIndex(l => l.trim().length > 0) : lines.findIndex(line => {
             const cells = line.split('|').map(key);
             const hasPaterno = cells.some(c => c.includes('APELLIDO PATERNO'));
             const hasNombres = cells.some(c => c.includes('NOMBRES'));

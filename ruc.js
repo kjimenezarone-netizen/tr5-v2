@@ -201,8 +201,8 @@ if (typeof document !== 'undefined') document.addEventListener('DOMContentLoaded
     el('ruc-load').addEventListener('click', async () => {
         if (!UI.requireIntendencia() || busy) return;
         const files = [...el('ruc-files').files];
-        if (!files.length) return status('Seleccione uno o varios ZIP.');
-        if (typeof JSZip === 'undefined') return status('No se pudo cargar el lector ZIP. Recargue la página.');
+        if (!files.length) return status('Seleccione uno o varios archivos (ZIP o TXT).');
+        if (files.some(f => /\.zip$/i.test(f.name)) && typeof JSZip === 'undefined') return status('No se pudo cargar el lector ZIP. Recargue la página.');
         const processingStarted=performance.now(), processingOffice=AppState.intendencia;
         busy = true; cancelled = false;
         rejectedSources = 0; el('ruc-diagnostic-preview').replaceChildren();

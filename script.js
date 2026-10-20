@@ -376,16 +376,17 @@ const Core = {
         AppState.trBusy = true;
         document.getElementById('tr-cancel').disabled = false;
         document.getElementById('btn_clear_file').disabled = true;
-        AppState.globalRows = [];
-        AppState.globalCols = [];
-        AppState.currentFilteredRows = [];
-        AppState.sourceDataset = null;
-        AppState.trDatasets.forEach(dataset => ColumnChooser.reset(dataset));
-        AppState.trDatasets = [];
-        TRView.reset();
-        document.getElementById('preview_section').classList.add('hidden');
 
         try {
+            AppState.globalRows = [];
+            AppState.globalCols = [];
+            AppState.currentFilteredRows = [];
+            AppState.sourceDataset = null;
+            AppState.trDatasets.forEach(dataset => ColumnChooser.reset(dataset));
+            AppState.trDatasets = [];
+            if (typeof TRView !== 'undefined' && TRView.reset) TRView.reset();
+            document.getElementById('preview_section').classList.add('hidden');
+
             const result = await Processing.run('TR', files, message => { document.getElementById('tr-processing-status').textContent = message; });
             const { datasets, analysis, table: { rows, cols } } = result;
             const dataset = datasets[0];

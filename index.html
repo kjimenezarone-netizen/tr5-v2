@@ -123,15 +123,15 @@
             <div class="step-header">
                 <span class="step-number">1</span>
                 <div>
-                    <h2 class="step-title">Cargar archivos ZIP</h2>
-                    <p class="step-subtitle">Seleccione los ZIP de resultados de consultas RUC. Cada carga reemplaza los resultados anteriores. Límite: 20 MB por ZIP y por TXT extraído.</p>
+                    <h2 class="step-title">Cargar archivos TXT o ZIP</h2>
+                    <p class="step-subtitle">Seleccione los archivos TXT o ZIP de resultados de consultas RUC. Cada carga reemplaza los resultados anteriores. Límite: 20 MB por archivo.</p>
                 </div>
             </div>
             <div class="card-main p-6 bg-white">
                 <div class="flex flex-wrap gap-3 items-end">
                     <div class="flex-1 min-w-[200px]">
-                        <label for="ruc-files" class="form-label">Archivos ZIP</label>
-                        <input id="ruc-files" type="file" accept=".zip" multiple class="file-input">
+                        <label for="ruc-files" class="form-label">Archivos TXT o ZIP</label>
+                        <input id="ruc-files" type="file" accept=".zip,.txt" multiple class="file-input">
                     </div>
                     <button id="ruc-load" class="btn-primary py-2.5 px-6 text-white font-bold rounded-xl flex items-center gap-2">
                         <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/></svg>
@@ -706,17 +706,17 @@
     </footer>
     <div id="toast-container" class="fixed bottom-4 right-4 z-50 flex flex-col gap-3"></div>
 
-    <script src="file-parser.js?v=2.3"></script>
-    <script src="sheets-api.js?v=2.3"></script>
-    <script src="processing-client.js?v=2.3"></script>
-    <script src="diagnostics.js?v=2.3"></script>
-    <script src="column-chooser.js?v=2.3"></script>
-    <script src="tr-analysis.js?v=2.3"></script>
-    <script src="tr-filters.js?v=2.3"></script>
-    <script src="tr-export.js?v=2.3"></script>
+    <script src="file-parser.js?v=2.4"></script>
+    <script src="sheets-api.js?v=2.4"></script>
+    <script src="processing-client.js?v=2.4"></script>
+    <script src="diagnostics.js?v=2.4"></script>
+    <script src="column-chooser.js?v=2.4"></script>
+    <script src="tr-analysis.js?v=2.4"></script>
+    <script src="tr-filters.js?v=2.4"></script>
+    <script src="tr-export.js?v=2.4"></script>
     <script src="vendor/jszip.min.js"></script>
-    <script src="script.js?v=2.3"></script>
-    <script src="ruc.js?v=2.3"></script>
+    <script src="script.js?v=2.4"></script>
+    <script src="ruc.js?v=2.4"></script>
     <!-- Sincroniza botones de vista Registros/Empresas con el select oculto que escucha ruc.js -->
     <script>
         document.addEventListener('DOMContentLoaded', function () {
