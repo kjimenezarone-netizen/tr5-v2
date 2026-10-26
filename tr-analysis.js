@@ -10,8 +10,33 @@ const TRAnalysis = {
         const items = people.flatMap(p => [...p.TR5, ...p.TR6]);
         const sources = analysis.datasets;
         const sheets = [
-            { name: 'Resumen', rows: [['Concepto','Valor'], ['Intendencia',context.intendencia], ['RUC',analysis.ruc ?? ''], ['Alcance',context.scope], ['Búsqueda de trabajadores',context.query], ['Filtro de trabajadores',context.filter], ['Trabajadores',people.length], ['Registros',items.length], ['Nota','El alcance filtrado aplica a la vista de trabajadores e incluye todas sus filas TR5/TR6. Las tablas de registros tienen filtros independientes.']] },
-            { name: 'Trabajadores', rows: [['Tipo documento','Número','Nombres registrados','TR5','TR6','Presencia','Diferencias de identidad'], ...people.map(p => [p.type,p.number,[...p.names].join(' / '),p.TR5.length,p.TR6.length,p.status,p.identityDifference ? 'Sí' : 'No'])] },
+            { name: 'Resumen', rows: [
+                ['Concepto','Valor'],
+                ['Intendencia',context.intendencia],
+                ['Razón Social', analysis.company ?? ''],
+                ['RUC',analysis.ruc ?? ''],
+                ['Alcance',context.scope],
+                ['Búsqueda de trabajadores',context.query],
+                ['Filtro de trabajadores',context.filter],
+                ['Trabajadores',people.length],
+                ['Registros',items.length],
+                ['Nota','El alcance filtrado aplica a la vista de trabajadores e incluye todas sus filas TR5/TR6. Las tablas de registros tienen filtros independientes.']
+            ] },
+            { name: 'Trabajadores', rows: [
+                ['Tipo documento','Número','Nombres registrados','TR5','TR6','Multiplicidad','Presencia','Diferencias de identidad'],
+                ...people.map(p => {
+                    const tr5 = p.TR5.length, tr6 = p.TR6.length;
+                    let multi = 'Registro único';
+                    if (tr5 > 1 && tr6 > 1) {
+                        multi = `Aparece varias veces en el documento (${tr5} en TR5, ${tr6} en TR6)`;
+                    } else if (tr5 > 1) {
+                        multi = `Aparece varias veces en el documento (${tr5} en TR5)`;
+                    } else if (tr6 > 1) {
+                        multi = `Aparece varias veces en el documento (${tr6} en TR6)`;
+                    }
+                    return [p.type, p.number, [...p.names].join(' / '), tr5, tr6, multi, p.status, p.identityDifference ? 'Sí' : 'No'];
+                })
+            ] },
             { name: 'Historico laboral', rows: [['Tipo documento','Número','Ingreso original','Ingreso interpretado','Establecimiento original','Contrato original','Diagnóstico','Archivo','Fila'], ...people.flatMap(p => this.history(p).rows.map(r => [p.type,p.number,r.start ?? '',r.iso ?? '',r.establishment ?? '',r.contract ?? '',[r.diagnostic,r.establishmentStatus,r.contractStatus].filter(Boolean).join(' / '),r.dataset.sourceFile,r.record.sourceRow]))] }
         ];
         sources.forEach(dataset => {
@@ -65,6 +90,20 @@ const TRAnalysis = {
             .map(line => /:\s*(\d{11})\s*$/.exec(line)?.[1]).filter(Boolean);
         return new Set(matches).size === 1 ? matches[0] : null;
     },
+    companyName(dataset) {
+        if (!dataset || !dataset.text) return null;
+        const lines = dataset.text.split(/\r\n|\n|\r/);
+        const maxLines = dataset.headerRow ? Math.min(dataset.headerRow - 1, lines.length) : Math.min(lines.length, 35);
+        for (let i = 0; i < maxLines; i++) {
+            const line = lines[i];
+            if (/^[=-]{3,}/.test(line) || line.includes('|')) break;
+            const m = /(?:RAZ[OÓ]N\s+SOCIAL|DENOMINACI[OÓ]N|NOMBRE(?:\s*,\s*DENOMINACI[OÓ]N|\s+O\s+RAZ[OÓ]N)?)\s*:\s*([^:\r\n]+)/i.exec(line);
+            if (m && m[1].trim()) {
+                return m[1].trim().replace(/^["']|["']$/g, '').trim();
+            }
+        }
+        return null;
+    },
     build(datasets) {
         if (!datasets.length || datasets.length > 2) throw new Error('Cargue un reporte o un par TR5 y TR6.');
         if (datasets.some(d => !['TR5', 'TR6'].includes(d.type)) || new Set(datasets.map(d => d.type)).size !== datasets.length) throw new Error('Para el cruce seleccione un TR5 y un TR6, sin repetir el tipo.');
@@ -72,10 +111,55 @@ const TRAnalysis = {
         if (datasets.length === 2 && (rucs.some(r => !r) || rucs[0] !== rucs[1])) throw new Error('No se puede cruzar: ambos reportes deben tener un RUC identificable e idéntico.');
         const people = new Map();
         datasets.forEach((dataset, sourceIndex) => {
-            const index = name => dataset.columns.findIndex(c => this.key(c.rawHeader || '') === name);
-            const typeIndex = index('TIPO'), numberIndex = index('NUMERO');
-            if (typeIndex < 0 || numberIndex < 0) throw new Error('No se identificaron las columnas de documento con seguridad.');
-            const nameIndexes = ['APELLIDO PATERNO', 'APELLIDO MATERNO', 'NOMBRES'].map(index);
+            const findCol = (aliases, exclude = []) => {
+                const normAliases = aliases.map(a => this.key(a));
+                const normExclude = exclude.map(e => this.key(e));
+                return dataset.columns.findIndex(c => {
+                    const k = this.key(c.rawHeader || '');
+                    if (!k) return false;
+                    if (normExclude.some(ex => k.includes(ex))) return false;
+                    return normAliases.some(alias => k === alias || (alias.length > 3 && (k.startsWith(alias) || k.endsWith(alias) || k === alias)));
+                });
+            };
+
+            const paternoIndex = dataset.columns.findIndex(c => {
+                const k = this.key(c.rawHeader || '');
+                return k === 'APELLIDO PATERNO' || k.includes('PATERNO');
+            });
+            const maternoIndex = dataset.columns.findIndex(c => {
+                const k = this.key(c.rawHeader || '');
+                return k === 'APELLIDO MATERNO' || k.includes('MATERNO');
+            });
+            const nombresIndex = dataset.columns.findIndex(c => {
+                const k = this.key(c.rawHeader || '');
+                return k === 'NOMBRES' || (k.includes('NOMBRES') && !k.includes('APELLIDO'));
+            });
+
+            let typeIndex = findCol(
+                ['TIPO', 'TIPO DOC', 'TIPO DOCUMENTO', 'TIPO DE DOCUMENTO', 'TIP DOC', 'TIP DE DOC', 'TIPO DE DOC'],
+                ['TRABAJADOR', 'CONTRATO', 'REGIMEN', 'ESTABLECIMIENTO', 'NUMERO', 'NRO']
+            );
+            let numberIndex = findCol(
+                ['NUMERO', 'NUMERO DOC', 'NUMERO DOCUMENTO', 'NUMERO DE DOCUMENTO', 'NRO DOC', 'NRO DOCUMENTO', 'NRO DE DOCUMENTO', 'NUM DOC', 'NUM DOCUMENTO', 'DOCUMENTO DE IDENTIDAD', 'NRO', 'DOCUMENTO'],
+                ['RUC', 'TRABAJADOR', 'CONTRATO', 'REGIMEN', 'TELEFONO', 'CUENTA', 'HIJOS', 'TIPO']
+            );
+
+            if (paternoIndex >= 2) {
+                if (typeIndex < 0 && numberIndex < 0) {
+                    typeIndex = paternoIndex - 2;
+                    numberIndex = paternoIndex - 1;
+                } else if (typeIndex < 0 && numberIndex !== (paternoIndex - 2) && (paternoIndex - 2) >= 0) {
+                    typeIndex = paternoIndex - 2;
+                } else if (numberIndex < 0 && typeIndex !== (paternoIndex - 1) && (paternoIndex - 1) >= 0) {
+                    numberIndex = paternoIndex - 1;
+                }
+            } else if (paternoIndex === 1 && (typeIndex < 0 || numberIndex < 0)) {
+                if (numberIndex < 0 && typeIndex !== 0) numberIndex = 0;
+                else if (typeIndex < 0 && numberIndex !== 0) typeIndex = 0;
+            }
+
+            if (typeIndex < 0 || numberIndex < 0 || typeIndex === numberIndex) throw new Error('No se identificaron las columnas de documento con seguridad.');
+            const nameIndexes = [paternoIndex, maternoIndex, nombresIndex];
             dataset.records.forEach(record => {
                 const type = (record.rawCells[typeIndex] || '').trim(), number = (record.rawCells[numberIndex] || '').trim();
                 const resolved = Boolean(type && number);
@@ -119,7 +203,8 @@ const TRAnalysis = {
                 person.hasSctr = null;
             }
         });
-        return { datasets, ruc: rucs[0], paired, people: [...people.values()] };
+        const company = datasets.map(d => this.companyName(d)).find(Boolean) || null;
+        return { datasets, ruc: rucs[0], company, paired, people: [...people.values()] };
     }
 };
 if (typeof module !== 'undefined' && module.exports) module.exports = TRAnalysis;

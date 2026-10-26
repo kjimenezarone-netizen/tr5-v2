@@ -15,9 +15,9 @@
         if (!type) throw new Error('Formato no reconocido. No se ha interpretado el archivo.');
         const headerIndex = type === 'RUC' ? lines.findIndex(l => l.trim().length > 0) : lines.findIndex(line => {
             const cells = line.split('|').map(key);
-            const hasPaterno = cells.some(c => c.includes('APELLIDO PATERNO'));
+            const hasPaterno = cells.some(c => c.includes('PATERNO') || c.includes('APELLIDO'));
             const hasNombres = cells.some(c => c.includes('NOMBRES'));
-            const hasNumero = cells.some(c => c === 'NUMERO' || c.includes('NUMERO'));
+            const hasNumero = cells.some(c => c === 'NUMERO' || c.includes('NUMERO') || c.includes('NRO') || c.includes('DOC') || c.includes('DOCUMENTO'));
             return hasPaterno && hasNombres && hasNumero;
         });
         if (headerIndex < 0) throw new Error('No se encontró un encabezado seguro para este reporte.');
@@ -46,7 +46,25 @@
         return { type, sourceFile, text, headerRow: headerIndex + 1, rawHeaders, columns, records, diagnostics };
     }
     function table(dataset) {
-        const aliases = { TIPO: 'Tipo Doc.', NUMERO: 'Nro Doc.', 'APELLIDO PATERNO': 'Apellido Paterno', 'APELLIDO MATERNO': 'Apellido Materno', NOMBRES: 'Nombres', OCUPACION: 'Ocupación' };
+        const aliases = {
+            TIPO: 'Tipo Doc.',
+            'TIPO DOC': 'Tipo Doc.',
+            'TIPO DOCUMENTO': 'Tipo Doc.',
+            'TIPO DE DOCUMENTO': 'Tipo Doc.',
+            'TIP DOC': 'Tipo Doc.',
+            NUMERO: 'Nro Doc.',
+            'NUMERO DOC': 'Nro Doc.',
+            'NUMERO DOCUMENTO': 'Nro Doc.',
+            'NUMERO DE DOCUMENTO': 'Nro Doc.',
+            'NRO DOC': 'Nro Doc.',
+            'NRO DOCUMENTO': 'Nro Doc.',
+            'NRO DE DOCUMENTO': 'Nro Doc.',
+            'DOCUMENTO DE IDENTIDAD': 'Nro Doc.',
+            'APELLIDO PATERNO': 'Apellido Paterno',
+            'APELLIDO MATERNO': 'Apellido Materno',
+            NOMBRES: 'Nombres',
+            OCUPACION: 'Ocupación'
+        };
         if (dataset.type === 'TR5') aliases['FEC. INICIO'] = 'Fecha de Ingreso';
         const used = new Set(['N°']);
         const names = dataset.columns.map(column => {

@@ -85,7 +85,7 @@ const Processing = {
             };
 
             try {
-                worker = new Worker('processing-worker.js?v=2.4');
+                worker = new Worker('processing-worker.js?v=2.6');
                 this.jobs.set(kind, { worker, cancel });
                 worker.onmessage = ({ data }) => {
                     if (data.event === 'progress') onProgress(data.message);

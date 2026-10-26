@@ -70,14 +70,157 @@ const TRExport = {
         el('tr-export-preview').classList.remove('hidden'); el('tr-export-download').disabled=false;
         el('tr-export-preview').scrollIntoView({block:'nearest'});
     },
+    getFilename(analysis, intendencia) {
+        let company = (analysis?.company || '').trim();
+        company = company.replace(/[<>:"/\\|?*]/g, '').replace(/\s+/g, '_');
+        const ruc = (analysis?.ruc || '').trim();
+        if (company && ruc) return `${company}_${ruc}.xlsx`;
+        if (company) return `${company}.xlsx`;
+        if (ruc) return `Reporte_${ruc}_${intendencia || 'SUNAFIL'}.xlsx`;
+        return `Reporte_TR_${intendencia || 'SUNAFIL'}.xlsx`;
+    },
+    formatWorksheet(ws, sheetName) {
+        if (!ws || !ws['!ref']) return ws;
+        const range = XLSX.utils.decode_range(ws['!ref']);
+        const numCols = range.e.c - range.s.c + 1;
+        const numRows = range.e.r - range.s.r + 1;
+
+        let tr5Col = -1, tr6Col = -1, multiCol = -1, docNumCol = -1, docTypeCol = -1;
+        for (let c = range.s.c; c <= range.e.c; c++) {
+            const addr = XLSX.utils.encode_cell({ r: 0, c });
+            const val = ws[addr] ? String(ws[addr].v || '').trim().toUpperCase() : '';
+            if (val === 'TR5') tr5Col = c;
+            else if (val === 'TR6') tr6Col = c;
+            else if (val.includes('MULTIPLICIDAD') || val.includes('ALERTA')) multiCol = c;
+            else if (val === 'NUMERO' || val.includes('NRO') || val.includes('RUC') || val.includes('DNI') || val === 'NUMERO DOCUMENTO') docNumCol = c;
+            else if (val.includes('TIPO')) docTypeCol = c;
+        }
+
+        const borderThin = { style: 'thin', color: { rgb: 'D1D5DB' } };
+        const cellBorder = { top: borderThin, bottom: borderThin, left: borderThin, right: borderThin };
+
+        const headerStyle = {
+            font: { name: 'Segoe UI', sz: 10, bold: true, color: { rgb: 'FFFFFF' } },
+            fill: { fgColor: { rgb: '1B365D' } }, // Azul institucional SUNAFIL
+            alignment: { vertical: 'center', horizontal: 'center', wrapText: true },
+            border: {
+                top: { style: 'medium', color: { rgb: '0F2942' } },
+                bottom: { style: 'medium', color: { rgb: '0F2942' } },
+                left: { style: 'thin', color: { rgb: '2B4C7E' } },
+                right: { style: 'thin', color: { rgb: '2B4C7E' } }
+            }
+        };
+
+        const regularTextStyle = {
+            font: { name: 'Segoe UI', sz: 9.5, color: { rgb: '1F2937' } },
+            alignment: { vertical: 'center', horizontal: 'left' },
+            border: cellBorder
+        };
+
+        const centerTextStyle = {
+            font: { name: 'Segoe UI', sz: 9.5, color: { rgb: '1F2937' } },
+            alignment: { vertical: 'center', horizontal: 'center' },
+            border: cellBorder
+        };
+
+        const countNormalStyle = {
+            font: { name: 'Segoe UI', sz: 9.5, color: { rgb: '374151' } },
+            alignment: { vertical: 'center', horizontal: 'center' },
+            border: cellBorder
+        };
+
+        const alertCountStyle = {
+            font: { name: 'Segoe UI', sz: 10, bold: true, color: { rgb: '9A3412' } }, // Ámbar oscuro
+            fill: { fgColor: { rgb: 'FEF3C7' } }, // Fondo amarillo/ámbar suave
+            alignment: { vertical: 'center', horizontal: 'center' },
+            border: {
+                top: { style: 'thin', color: { rgb: 'F59E0B' } },
+                bottom: { style: 'thin', color: { rgb: 'F59E0B' } },
+                left: { style: 'thin', color: { rgb: 'F59E0B' } },
+                right: { style: 'thin', color: { rgb: 'F59E0B' } }
+            }
+        };
+
+        const alertMultiStyle = {
+            font: { name: 'Segoe UI', sz: 9, bold: true, color: { rgb: 'B45309' } },
+            fill: { fgColor: { rgb: 'FFFBEB' } },
+            alignment: { vertical: 'center', horizontal: 'left' },
+            border: cellBorder
+        };
+
+        const colWidths = new Array(numCols).fill(12);
+
+        for (let r = range.s.r; r <= range.e.r; r++) {
+            for (let c = range.s.c; c <= range.e.c; c++) {
+                const addr = XLSX.utils.encode_cell({ r, c });
+                let cell = ws[addr];
+                if (!cell) {
+                    cell = { v: '', t: 's' };
+                    ws[addr] = cell;
+                }
+
+                const strVal = cell.v != null ? String(cell.v) : '';
+                colWidths[c - range.s.c] = Math.max(colWidths[c - range.s.c], strVal.length + 4);
+
+                if (r === 0) {
+                    cell.s = headerStyle;
+                } else {
+                    if (c === tr5Col || c === tr6Col) {
+                        const num = Number(cell.v);
+                        if (!isNaN(num) && num > 1) {
+                            cell.s = alertCountStyle;
+                        } else {
+                            cell.s = countNormalStyle;
+                        }
+                    } else if (c === multiCol && strVal.includes('Aparece varias veces')) {
+                        cell.s = alertMultiStyle;
+                    } else if (c === docNumCol || (docNumCol < 0 && c === 1)) {
+                        cell.s = centerTextStyle;
+                        cell.t = 's'; // Preservar ceros iniciales como texto
+                        cell.z = '@';
+                    } else if (c === docTypeCol || (docTypeCol < 0 && c === 0)) {
+                        cell.s = centerTextStyle;
+                    } else {
+                        cell.s = regularTextStyle;
+                    }
+                }
+            }
+        }
+
+        // Anchos mínimos específicos según tipo de columna
+        if (multiCol >= 0) colWidths[multiCol] = Math.max(colWidths[multiCol], 36);
+        if (tr5Col >= 0) colWidths[tr5Col] = Math.max(colWidths[tr5Col], 10);
+        if (tr6Col >= 0) colWidths[tr6Col] = Math.max(colWidths[tr6Col], 10);
+
+        ws['!cols'] = colWidths.map(w => ({ wch: Math.min(Math.max(w, 12), 65) }));
+
+        // Alto de filas: encabezado 28pt, datos 20pt
+        const rowHeights = [];
+        for (let r = 0; r < numRows; r++) {
+            rowHeights.push({ hpt: r === 0 ? 28 : 20 });
+        }
+        ws['!rows'] = rowHeights;
+
+        // Inmovilizar fila superior y habilitar filtros automáticos
+        ws['!autofilter'] = { ref: ws['!ref'] };
+        ws['!views'] = [{ state: 'frozen', ySplit: 1 }];
+
+        return ws;
+    },
     download() {
         if (!UI.requireIntendencia() || AppState.trBusy || !this.snapshot) return;
         if (this.snapshot.intendencia!==AppState.intendencia) return this.invalidate();
         try {
-            const workbook=XLSX.utils.book_new();
-            this.snapshot.sheets.forEach(s=>XLSX.utils.book_append_sheet(workbook,XLSX.utils.aoa_to_sheet(s.rows),s.name));
-            XLSX.writeFile(workbook,`TR_${this.snapshot.intendencia}.xlsx`);
+            const workbook = XLSX.utils.book_new();
+            this.snapshot.sheets.forEach(s => {
+                const rawSheet = XLSX.utils.aoa_to_sheet(s.rows);
+                const styledSheet = this.formatWorksheet(rawSheet, s.name);
+                XLSX.utils.book_append_sheet(workbook, styledSheet, s.name);
+            });
+            const filename = this.getFilename(TRView.analysis, this.snapshot.intendencia);
+            XLSX.writeFile(workbook, filename);
             Dashboard.registrarEnDrive('DESCARGAR_EXCEL',this.snapshot.metadata);
+            Utils.showToast(`Excel descargado correctamente: ${filename}`, 'success');
         } catch(error) { Utils.showToast(`No se pudo generar el Excel: ${error.message}`); }
     },
     quickDownload() {
@@ -93,32 +236,39 @@ const TRExport = {
                 filter: 'Sin filtros aplicados'
             });
             const workbook = XLSX.utils.book_new();
-            sheets.forEach(s => XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet(s.rows), s.name));
-            const rucStr = TRView.analysis.ruc ? `_${TRView.analysis.ruc}` : '';
-            XLSX.writeFile(workbook, `Reporte_Inspeccion_TR${rucStr}_${AppState.intendencia || 'SUNAFIL'}.xlsx`);
+            sheets.forEach(s => {
+                const rawSheet = XLSX.utils.aoa_to_sheet(s.rows);
+                const styledSheet = this.formatWorksheet(rawSheet, s.name);
+                XLSX.utils.book_append_sheet(workbook, styledSheet, s.name);
+            });
+            const filename = this.getFilename(TRView.analysis, AppState.intendencia);
+            XLSX.writeFile(workbook, filename);
             Dashboard.registrarEnDrive('DESCARGAR_EXCEL', {
                 intendencia: AppState.intendencia,
                 modulo: TRView.analysis.datasets.length === 2 ? 'TR5_TR6' : TRView.analysis.datasets[0].type,
                 registros: people.reduce((n, p) => n + p.TR5.length + p.TR6.length, 0),
                 archivos: TRView.analysis.datasets.length
             });
-            Utils.showToast('Excel generado y descargado correctamente para su informe.', 'success');
+            Utils.showToast(`Excel descargado correctamente: ${filename}`, 'success');
         } catch(error) {
             Utils.showToast(`No se pudo generar el Excel: ${error.message}`);
         }
     }
 };
-document.addEventListener('DOMContentLoaded',()=>{
-    ['tr-export-scope','intendencia'].forEach(id=>{
-        const el = document.getElementById(id);
-        if (el) el.addEventListener('change',()=>{
-            TRExport.invalidate();
-            TRExport.syncScopeOptions();
+if (typeof document !== 'undefined') {
+    document.addEventListener('DOMContentLoaded',()=>{
+        ['tr-export-scope','intendencia'].forEach(id=>{
+            const el = document.getElementById(id);
+            if (el) el.addEventListener('change',()=>{
+                TRExport.invalidate();
+                TRExport.syncScopeOptions();
+            });
         });
+        document.getElementById('tr-export-prepare').addEventListener('click',()=>TRExport.preview());
+        document.getElementById('tr-export-download').addEventListener('click',()=>TRExport.download());
+        const directBtn = document.getElementById('tr-direct-download-excel');
+        if (directBtn) directBtn.addEventListener('click', () => TRExport.quickDownload());
     });
-    document.getElementById('tr-export-prepare').addEventListener('click',()=>TRExport.preview());
-    document.getElementById('tr-export-download').addEventListener('click',()=>TRExport.download());
-    const directBtn = document.getElementById('tr-direct-download-excel');
-    if (directBtn) directBtn.addEventListener('click', () => TRExport.quickDownload());
-});
+}
+if (typeof module !== 'undefined' && module.exports) module.exports = TRExport;
 

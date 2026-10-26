@@ -264,7 +264,11 @@ if (typeof document !== 'undefined') document.addEventListener('DOMContentLoaded
         if (preview.intendencia !== AppState.intendencia) return invalidatePreview();
         try {
             const workbook = XLSX.utils.book_new();
-            preview.sheets.forEach(s => XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet(s.rows), s.name));
+            preview.sheets.forEach(s => {
+                const rawSheet = XLSX.utils.aoa_to_sheet(s.rows);
+                const ws = (typeof TRExport !== 'undefined' && TRExport.formatWorksheet) ? TRExport.formatWorksheet(rawSheet, s.name) : rawSheet;
+                XLSX.utils.book_append_sheet(workbook, ws, s.name);
+            });
             XLSX.writeFile(workbook, `RUC_${preview.intendencia}.xlsx`);
             SheetsAPI.event('DESCARGAR_EXCEL',preview.metadata);
             status('Excel generado con el alcance previsualizado.');

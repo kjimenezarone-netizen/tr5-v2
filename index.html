@@ -7,7 +7,8 @@
     <title>SUNAFIL — Lector TR5/TR6 y RUC Masivo</title>
     <meta name="description" content="Plataforma institucional SUNAFIL-DINI para análisis de reportes TR5/TR6 y consultas RUC masivas.">
     <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
+    <script src="vendor/xlsx.bundle.js"></script>
+    <script>if (typeof XLSX === 'undefined') { document.write('<script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"><\/script>'); }</script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
     <link rel="stylesheet" href="style.css">
@@ -706,17 +707,17 @@
     </footer>
     <div id="toast-container" class="fixed bottom-4 right-4 z-50 flex flex-col gap-3"></div>
 
-    <script src="file-parser.js?v=2.4"></script>
-    <script src="sheets-api.js?v=2.4"></script>
-    <script src="processing-client.js?v=2.4"></script>
-    <script src="diagnostics.js?v=2.4"></script>
-    <script src="column-chooser.js?v=2.4"></script>
-    <script src="tr-analysis.js?v=2.4"></script>
-    <script src="tr-filters.js?v=2.4"></script>
-    <script src="tr-export.js?v=2.4"></script>
+    <script src="file-parser.js?v=2.6"></script>
+    <script src="sheets-api.js?v=2.6"></script>
+    <script src="processing-client.js?v=2.6"></script>
+    <script src="diagnostics.js?v=2.6"></script>
+    <script src="column-chooser.js?v=2.6"></script>
+    <script src="tr-analysis.js?v=2.6"></script>
+    <script src="tr-filters.js?v=2.6"></script>
+    <script src="tr-export.js?v=2.6"></script>
     <script src="vendor/jszip.min.js"></script>
-    <script src="script.js?v=2.4"></script>
-    <script src="ruc.js?v=2.4"></script>
+    <script src="script.js?v=2.6"></script>
+    <script src="ruc.js?v=2.6"></script>
     <!-- Sincroniza botones de vista Registros/Empresas con el select oculto que escucha ruc.js -->
     <script>
         document.addEventListener('DOMContentLoaded', function () {

@@ -2,7 +2,7 @@ const fs=require('node:fs'),path=require('node:path'),vm=require('node:vm'),asse
 const frames=[];
 const context=vm.createContext({TextDecoder,Uint8Array,ArrayBuffer,Blob,Promise,setTimeout,clearTimeout,console,postMessage:data=>frames.push(structuredClone(data))});
 context.self=context;
-context.importScripts=(...files)=>files.forEach(file=>vm.runInContext(fs.readFileSync(path.join(__dirname,'..',file),'utf8'),context));
+context.importScripts=(...files)=>files.forEach(file=>vm.runInContext(fs.readFileSync(path.join(__dirname,'..',file.split('?')[0]),'utf8'),context));
 vm.runInContext(fs.readFileSync(path.join(__dirname,'..','processing-worker.js'),'utf8'),context);
 const make=(name,bytes)=>{const file=new Blob([bytes]);file.name=name;return file;};
 const makeSyntheticTR = (kind='TR5') => {

@@ -23,4 +23,15 @@ if (process.argv.length > 3) {
     assert.equal(real.people.reduce((n,p) => n+p.TR5.length+p.TR6.length,0), 243);
     console.log(`Muestras reales: ${real.people.length} identidades, 243 registros conservados, ${real.people.filter(p=>p.status==='En ambos').length} en ambos reportes.`);
 }
-console.log('OK: multiplicidad, ceros iniciales, tipo documental, identidad incompleta, diferencias y rechazo de cruces inseguros.');
+// Pruebas de compatibilidad con variaciones en nombres de columnas de documentos
+const c = parser.parse(`TR5: reporte\nNRO DE RUC: 20123456789\nTipo de Documento|Número de Documento|Apellido paterno|Apellido materno|Nombres\n01|45678901|Gomez|Luna|Carlos`, 'TR5_var1.txt');
+const d = parser.parse(`TR6: reporte\nNRO DE RUC: 20123456789\nTipo Doc.|Nro. Documento|Apellido paterno|Apellido materno|Nombres\n01|45678901|Gomez|Luna|Carlos`, 'TR6_var2.txt');
+const resultVar = tr.build([c, d]);
+assert.equal(resultVar.people.length, 1);
+assert.equal(resultVar.people[0].type, '01');
+assert.equal(resultVar.people[0].number, '45678901');
+assert.equal(resultVar.people[0].status, 'En ambos');
+assert.equal(resultVar.people[0].TR5.length, 1);
+assert.equal(resultVar.people[0].TR6.length, 1);
+
+console.log('OK: multiplicidad, ceros iniciales, tipo documental, identidad incompleta, diferencias, variantes de cabecera y rechazo de cruces inseguros.');
