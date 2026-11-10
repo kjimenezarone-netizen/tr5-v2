@@ -11,9 +11,10 @@
 * { box-sizing: border-box; }
 
 body {
-    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    font-family: 'Open Sans', 'Segoe UI', -apple-system, BlinkMacSystemFont, Tahoma, sans-serif;
     background: linear-gradient(180deg, #f8fbff 0%, #f1f5f9 100%);
     color: var(--sunafil-slate);
+    padding-bottom: 3.5rem; /* Margen para que el footer inamovible no tape contenido */
 }
 
 .header-inst {
@@ -250,8 +251,23 @@ html.dark-mode header {
     border-bottom-color: #3b82f6 !important;
 }
 
+/* --- Footer inamovible permanente --- */
+.footer-fixed {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    z-index: 40;
+    background: rgba(255, 255, 255, 0.96);
+    backdrop-filter: blur(8px);
+    border-top: 1px solid #E2E8F0;
+    padding: 0.4rem 1.5rem;
+    box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.04);
+}
+
+html.dark-mode .footer-fixed,
 html.dark-mode footer {
-    background-color: #1e293b !important;
+    background-color: rgba(30, 41, 59, 0.96) !important;
     border-color: #334155 !important;
 }
 
@@ -422,33 +438,65 @@ html.dark-mode .audit-row:hover {
 
 /* ═══════════════════════════ NUEVOS ESTILOS V2 ═══════════════════════════ */
 
-/* --- Intendencia bar (barra azul prominente) --- */
+/* --- Intendencia bar (barra azul adaptable y proporcionada) --- */
 .intendencia-bar {
-    display: flex; align-items: center; gap: 1rem;
-    padding: 0.7rem 1.5rem;
+    display: flex; align-items: center; justify-content: center; gap: 1.25rem;
+    padding: 0.35rem 1.5rem;
     background: linear-gradient(135deg, #003366 0%, #0e4d9b 100%);
     border-bottom: 2px solid rgba(0,0,0,0.15);
     flex-wrap: wrap;
+    transition: padding 0.2s ease;
 }
-.intendencia-icon { color: rgba(255,255,255,0.65); flex-shrink: 0; display: flex; }
-.intendencia-select-wrapper { flex: 1; min-width: 180px; }
+.intendencia-icon { color: rgba(255,255,255,0.7); flex-shrink: 0; display: flex; }
+.intendencia-select-wrapper { flex: 0 1 440px; max-width: 480px; min-width: 240px; }
 .intendencia-label {
     display: block; font-size: 0.65rem; font-weight: 800;
     text-transform: uppercase; letter-spacing: 0.06em;
-    color: rgba(255,255,255,0.65); margin-bottom: 0.25rem;
+    color: rgba(255,255,255,0.75); margin-bottom: 0.15rem;
 }
 #intendencia {
-    width: 100%; padding: 0.45rem 0.75rem;
-    border: 1.5px solid rgba(255,255,255,0.3); border-radius: 0.5rem;
-    background: rgba(255,255,255,0.12); color: white;
+    width: 100%; padding: 0.35rem 0.75rem;
+    border: 1.5px solid rgba(255,255,255,0.35); border-radius: 0.45rem;
+    background: rgba(255,255,255,0.14); color: white;
     font-weight: 700; font-size: 0.875rem; backdrop-filter: blur(4px);
-    transition: border-color 0.15s, background 0.15s;
+    transition: border-color 0.15s, background 0.15s, padding 0.2s ease;
 }
-#intendencia:focus { border-color: rgba(255,255,255,0.7); background: rgba(255,255,255,0.2); outline: none; }
+#intendencia:focus { border-color: rgba(255,255,255,0.75); background: rgba(255,255,255,0.22); outline: none; }
 #intendencia option { background: #1e293b; color: #e2e8f0; }
 .intendencia-help {
-    font-size: 0.75rem; color: rgba(255,255,255,0.6);
-    flex-shrink: 0; max-width: 300px; margin: 0;
+    font-size: 0.72rem;
+    font-weight: 600;
+    line-height: 1.3;
+    color: #F8FAFC;
+    background: rgba(0, 24, 51, 0.6);
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    border-left: 3px solid #38BDF8;
+    padding: 0.3rem 0.75rem;
+    border-radius: 4px;
+    max-width: 360px;
+    margin: 0;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
+    letter-spacing: 0.01em;
+    transition: padding 0.2s ease, font-size 0.2s ease;
+}
+
+/* Reducción dinámica en pantallas cortas (laptops o baja altura) o móviles */
+@media (max-height: 740px), (max-width: 640px) {
+    .intendencia-bar {
+        padding: 0.22rem 1rem;
+        gap: 0.75rem;
+    }
+    .intendencia-label {
+        display: none; /* oculta la etiqueta redundante para ganar altura */
+    }
+    #intendencia {
+        padding: 0.25rem 0.65rem;
+        font-size: 0.82rem;
+    }
+    .intendencia-help {
+        padding: 0.22rem 0.65rem;
+        font-size: 0.68rem;
+    }
 }
 
 /* --- Step sections (pasos numerados) --- */
@@ -644,7 +692,8 @@ details > .step-export-summary::marker { display: none; }
 /* ═══════════════ DARK MODE — Nuevos elementos ═══════════════ */
 html.dark-mode .intendencia-bar { background: linear-gradient(135deg, #0c1a2e 0%, #132240 100%); }
 html.dark-mode #intendencia { background: rgba(255,255,255,0.08); border-color: rgba(255,255,255,0.2); color: #e2e8f0; }
-html.dark-mode .intendencia-label, html.dark-mode .intendencia-help { color: rgba(200,220,255,0.6); }
+html.dark-mode .intendencia-label { color: rgba(200,220,255,0.7); }
+html.dark-mode .intendencia-help { color: #f1f5f9; background: rgba(15, 23, 42, 0.7); border-color: rgba(255,255,255,0.1); }
 
 html.dark-mode .module-card { background: #1e293b !important; border-color: #334155; }
 html.dark-mode .module-card:hover { box-shadow: 0 18px 36px -14px rgba(0,0,0,0.5); }
@@ -700,8 +749,9 @@ html.dark-mode .issues-list { color: #fca5a5; }
 
 /* --- Responsive adicional --- */
 @media (max-width: 640px) {
-    .intendencia-bar { flex-wrap: wrap; padding: 0.75rem 1rem; }
-    .intendencia-help { display: none; }
+    .intendencia-bar { flex-wrap: wrap; padding: 0.35rem 0.75rem; gap: 0.5rem; }
+    .intendencia-select-wrapper { max-width: 100%; min-width: 0; width: 100%; }
+    .intendencia-help { font-size: 0.68rem; padding: 0.25rem 0.5rem; text-align: center; width: 100%; max-width: 100%; }
     .view-toggle-group { width: 100%; }
     .view-toggle-btn { flex: 1; justify-content: center; }
     .step-header { gap: 0.6rem; }
@@ -890,3 +940,23 @@ html.dark-mode .filter-chip-remove:hover {
     background: #3b82f6;
     color: white;
 }
+
+
+/* Mejoras del flujo TR 3.0: UI solamente; datos y exportaciones intactos. */
+.tr-export-accordion { border: 1px solid #cbd9ea; border-radius: 16px; overflow: hidden; background: #fff; box-shadow: 0 5px 18px rgba(17, 52, 92, .07); }
+.tr-export-accordion > summary { background: #eff6ff; color: #09376b; padding: 15px 20px; font-size: 14px; font-weight: 750; cursor: pointer; }
+.tr-export-accordion[open] > summary { border-bottom: 1px solid #cbd9ea; }
+.tr-export-accordion > .card-main { border: 0; margin-top: 0 !important; box-shadow: none; }
+.tr-export-description { color: #475569; line-height: 1.65; font-size: 13px; margin-bottom: 12px; }
+.tr-export-facts { display: block; padding: 11px 14px; margin-bottom: 16px; font-size: 12px; background: #f1f7fd; color: #123f6e; border-left: 3px solid #2d75b4; border-radius: 9px; }
+.tr-finish-bar { margin-top: 15px; padding: 14px 17px; display: flex; gap: 14px; align-items: center; justify-content: space-between; flex-wrap: wrap; border: 1px solid #e2e8f0; border-radius: 12px; background: #f8fafc; }
+.tr-finish-bar p { margin: 0; font-size: 12px; color: #475569; max-width: 620px; }
+.tr-reset-action { border: 1px solid #b7c5d9; border-radius: 9px; padding: 10px 15px; font-weight: 700; color: #8a2835; background: #fff; }
+.tr-reset-action:hover:not(:disabled) { background: #fff0f2; border-color: #d48b93; }
+.tr-reset-action:disabled { cursor: not-allowed; opacity: .43; }
+html.dark-mode .tr-export-accordion { background: #162032; border-color: #334155; }
+html.dark-mode .tr-export-accordion > summary, html.dark-mode .tr-export-facts { background: #1d3552; color: #dbeafe; border-color: #40618c; }
+html.dark-mode .tr-finish-bar { background: #162032; border-color: #334155; }
+html.dark-mode .tr-finish-bar p { color: #cbd5e1; }
+html.dark-mode .tr-reset-action { color: #ffb6be; border-color: #96505b; background: #2d1b2a; }
+@media(max-width: 650px) { .tr-finish-bar { align-items: stretch; } .tr-reset-action { width: 100%; } }

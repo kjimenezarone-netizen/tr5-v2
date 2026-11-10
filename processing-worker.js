@@ -1,4 +1,4 @@
-importScripts('file-parser.js?v=2.6', 'tr-analysis.js?v=2.6', 'vendor/jszip.min.js', 'ruc.js?v=2.6');
+importScripts('file-parser.js?v=2.6', 'tr-analysis.js?v=3.1', 'vendor/jszip.min.js', 'ruc.js?v=3.1');
 const progress = message => postMessage({event:'progress',message});
 async function dataset(file, name) {
     progress(`Leyendo y detectando: ${name}`);

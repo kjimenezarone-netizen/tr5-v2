@@ -1,0 +1,101 @@
+<?xml version='1.0' encoding='utf-8'?>
+<documentoTecnico proyecto="TR5-V2" versionEntrega="3.2" fechaRevision="2026-11-06" idioma="es-PE" origen="Lector TR5-TR6.rar" estadoPublicacion="solo-paquete-local">
+  <identificacion>
+    <titulo>Implementación de filtros de búsqueda y exportación por trabajador en cruce TR5/TR6</titulo>
+    <repositorio>https://github.com/kjimenezarone-netizen/tr5-v2</repositorio>
+    <base>Entrega v3.1 revisada a partir del archivo RAR enviado por el usuario</base>
+    <limitacion>No se actualizaron archivos del repositorio remoto; la integración debe realizarse por una rama Git y Pull Request.</limitacion>
+  </identificacion>
+  <requisitosImplementados>
+    <requisito id="RF-32-01" estado="implementado">Reubicar columna/tipo de documento/oficio u ocupación desde Registros originales al cruce de trabajadores.</requisito>
+    <requisito id="RF-32-02" estado="implementado">Búsqueda por apellido paterno o materno, nombres, tipo o número documental, oficio/ocupación y cualquier columna cargada desde TR5/TR6.</requisito>
+    <requisito id="RF-32-03" estado="implementado">Aplicar de forma conjunta búsqueda textual, tipo de documento, oficio/ocupación, estado/presencia, tarjetas rápidas y filtros avanzados existentes.</requisito>
+    <requisito id="RF-32-04" estado="implementado">Generar listas dinámicas de tipos documentales y ocupaciones únicamente desde los registros cargados, sin valores de ejemplo fijos.</requisito>
+    <requisito id="RF-32-05" estado="implementado">Exportar los trabajadores que cumplen los filtros con todas sus filas originales TR5/TR6, aunque tengan oficios múltiples y fechas diversas.</requisito>
+    <requisito id="RF-32-06" estado="implementado">Preservar ceros iniciales, valores originales, columnas originales, procedencia, datos del encabezado y registros no seleccionados en memoria.</requisito>
+    <requisito id="RF-32-07" estado="implementado">Habilitar acceso directo a Resultados del filtro aplicado y mostrar cantidad de trabajadores y de registros asociados.</requisito>
+    <requisito id="RF-32-08" estado="implementado">Limpiar filtros sin descartar los reportes cargados, las selecciones persistentes de trabajo ni los archivos Excel descargados.</requisito>
+    <requisito id="RF-32-09" estado="implementado">Mantener búsqueda de registros originales independiente de la exportación filtrada por trabajadores.</requisito>
+  </requisitosImplementados>
+  <flujoDeUsuario>
+    <paso numero="1" titulo="Carga de reportes">Seleccione TR5 o TR5+TR6 del mismo RUC y procese.</paso>
+    <paso numero="2" titulo="Registros originales">Consulte filas y columnas originales; la búsqueda de aquí no define la exportación.</paso>
+    <paso numero="3" titulo="Cruce inspectivo">Seleccione columna, escriba apellido/nombre/documento, elija tipo documental y ocupación, revise trabajadores que cumplen y use Exportar resultados filtrados.</paso>
+    <paso numero="4" titulo="Centro de exportación">Previsualice Resultado filtrado y descargue Excel con hojas Resumen, Trabajadores, Historico laboral, originales y Fuentes.</paso>
+  </flujoDeUsuario>
+  <semanticaFiltros>
+    <conjuncion>Los distintos criterios activos se combinan con AND sobre la identidad del trabajador; cada trabajador puede tener múltiples registros originales asociados.</conjuncion>
+    <ocupacion>El oficio/ocupación se detecta en columnas OCUPACION, OFICIO, PUESTO, CARGO y variantes explícitas; si una identidad figura con varios oficios basta que uno coincida, pero se exportan todas sus filas.</ocupacion>
+    <columna>La lista permite elegir campos de persona y columnas originales específicas de TR5 o TR6. Una selección de columna sin texto no filtra por sí sola.</columna>
+    <tipos>El tipo de documento se compara ignorando diferencias de mayúsculas/tildes, sin alterar el dato original.</tipos>
+    <ceroResultados>Cuando no hay coincidencias, el botón de exportación filtrada se deshabilita y no se genera un archivo vacío accidentalmente.</ceroResultados>
+    <exportacion>TRAnalysis.scope(..., filtered, ...) limita trabajadores, y TRAnalysis.sheets conserva todas las filas fuente de los trabajadores elegidos y sus metadatos de procedencia.</exportacion>
+    <notasSeguridad>No se modifican reportes TXT originales ni se eliminan registros durante el filtrado. Reingresos y coberturas son indicadores sujetos a verificación inspectiva.</notasSeguridad>
+  </semanticaFiltros>
+  <matrizCambios>
+    <cambio id="CH-32-01" archivos="index.html" categoria="Interfaz" estado="implementado">Quitar filtros por tipo/ocupación/columna de la sección de registros originales y crear controles equivalentes en la sección de cruce.</cambio>
+    <cambio id="CH-32-02" archivos="tr-filters.js" categoria="Lógica de búsqueda" estado="implementado">Implementar funciones para buscar identidad, obtener ocupaciones, tipos documentales y columnas dinámicas.</cambio>
+    <cambio id="CH-32-03" archivos="tr-analysis.js" categoria="Estado y eventos" estado="implementado">Poblar filtros, aplicar criterios combinados, mostrar conteos, limpiar filtros sin borrar datos e implementar acceso directo a Excel filtrado.</cambio>
+    <cambio id="CH-32-04" archivos="tr-export.js" categoria="Exportación" estado="implementado">Reconocer tipo y oficio como filtros activos; registrar criterios, habilitar alcance filtrado y previsualizar las filas completas asociadas.</cambio>
+    <cambio id="CH-32-05" archivos="script.js" categoria="Desduplicación" estado="implementado">Retirar controles y lógica duplicada de filtro de tipo/ocupación/columna de la tabla original, dejando solo búsqueda independiente.</cambio>
+    <cambio id="CH-32-06" archivos="tests/tr-cruce-filtros-integracion.test.cjs" categoria="Aseguramiento de calidad" estado="implementado">Añadir cinco pruebas nuevas: criterios combinados, listas dinámicas, preservación del XLSX, localización del control y muestra real.</cambio>
+    <cambio id="CH-32-07" archivos="LEEME_CAMBIOS.md" categoria="Documentación" estado="implementado">Añadir guía funcional, operación local, comandos de validación, advertencias y proceso Git.</cambio>
+  </matrizCambios>
+  <validacion>
+    <pruebasUnitarias herramienta="Node.js 22" resultado="aprobado">26 pruebas aprobadas con node --test, sin fallos.</pruebasUnitarias>
+    <ejecucionNavegador resultado="aprobado-con-limitacion" limitacion="No sustituye verificación de interfaz visual con CSS/CDN en despliegue normal">Se insertó HTML y JavaScript en Chromium en un contexto simulado debido al bloqueo de navegación; se cargaron TR5+TR6 sintéticos, se aplicaron 3 filtros, se previsualizó y descargó un XLSX válido.</ejecucionNavegador>
+    <integridadExcel resultado="aprobado">La prueba generó seis hojas XLSX válidas. Un trabajador conservó 2 registros TR5 y 1 registro TR6, incluidas ocupaciones alternativas y ceros iniciales.</integridadExcel>
+    <muestrasReales resultado="aprobado">Archivos aportados: 6 filas TR5 y 121 filas TR6, con selección ALAMA+L.E/DNI+PEON AGRICOLA que conserva 2 filas TR5 y 1 TR6.</muestrasReales>
+    <inspeccionHTML resultado="aprobado">Identificadores HTML sin duplicados y controles de búsqueda colocados exclusivamente en Trabajadores/cruce.</inspeccionHTML>
+    <pendientes>Comprobar estética responsive real con CDN disponibles, exportación masiva y regresión institucional antes de desplegar.</pendientes>
+  </validacion>
+  <instrucciones>
+    <windows>Extraiga el ZIP; abra la carpeta TR5V2_Proyecto_Revisado en VS Code; ejecute node --test y luego py -m http.server 8000; abra http://localhost:8000.</windows>
+    <git>git clone https://github.com/kjimenezarone-netizen/tr5-v2.git; git switch -c feat/filtros-cruce-tr-v3-2; copie código corregido a raíz sin borrar .git; node --test; git add -A; git commit -m "feat: filtros de ocupación en cruce TR"; git push -u origin feat/filtros-cruce-tr-v3-2; abrir Pull Request.</git>
+    <regla>No aplique a producción sin copia de seguridad y verificación manual de reportes institucionales. Descargar Excel no limpia la sesión; el botón de finalizar requiere confirmación.</regla>
+  </instrucciones>
+  <inventarioArchivos>
+    <archivo ruta=".kilo/.gitignore" bytes="107" sha256="1ff25b005585f501edf16194863ece8eef55d50d46eed6322095aabdf6eafb40" />
+    <archivo ruta=".kilo/agents/data.md" bytes="1387" sha256="00cf5f65313814f145bc21d17297f819a3712bed8aca67e19bbacadc5494e89f" />
+    <archivo ruta="CAMBIOS_APLICADOS_V3_1.patch" bytes="100057" sha256="bb768cc5152f8d48156d6228198bd33f6ec704c27d761314be21571424ff9ef3" />
+    <archivo ruta="CAMBIOS_FILTROS_CRUCE_V3_2.patch" bytes="50095" sha256="376b635d45df558972f71e5ce37a90a19906bc7c9fa3f39c06d867683ab4ed5e" />
+    <archivo ruta="DOCUMENTACION_CAMBIOS_V3_1.xml" bytes="27630" sha256="42b1e060257c4ad338203a44b8bd8cde1c3cb82df46d0d45af0a066368c7b846" />
+    <archivo ruta="LEEME_CAMBIOS.md" bytes="8924" sha256="971e27d65697665e02a50dd6d09e562f33cb08997b1f158703df82c7e2c86d21" />
+    <archivo ruta="PLAN_V2.md" bytes="12757" sha256="8750acd1a3ea7587111b7d64e5a3dd3e0344acbe3f7b396424d9e05ea33e19ff" />
+    <archivo ruta="apps-script/Code.gs" bytes="7275" sha256="3ac085b50dfacd9ed37f1d3320d8d41be4a5a5148fbeea0bcf4c516f49c5147c" />
+    <archivo ruta="apps-script/INSTALACION.md" bytes="3757" sha256="968008b318bc24b8d3589f0758857e58ea616e12f2d6bcca8bf045eb18433205" />
+    <archivo ruta="apps-script/backend.test.cjs" bytes="1732" sha256="ff6cb72b1223fcc7c871ae71047b11cf569d1349ef7019482a2dad79ebbfd7e5" />
+    <archivo ruta="column-chooser.js" bytes="2269" sha256="045db527ef7901f29871c39b3d04f4ceee78bdf29d79552b7d9fbcadfc9c33bd" />
+    <archivo ruta="diagnostics.js" bytes="3866" sha256="ba6ddd0ea57422f2d4c32e85a7a5989781910d312c3e913867eb9770c8b31298" />
+    <archivo ruta="file-parser.js" bytes="4688" sha256="6d4965fddf70f37c41932823338bd89dda0c6c45dfd7ab70c89fd966ece31fbe" />
+    <archivo ruta="index.html" bytes="58175" sha256="3a4237a03110c8f08bca31ca57ab6f898c4324e5a582fa713b63478e148ceb6f" />
+    <archivo ruta="muestras/muestra_TR5_ACELIM.txt" bytes="3589" sha256="06f589197dbf51c183cfc7ab09af17b3a2013e55023371f8017e2446bbfbbcd7" />
+    <archivo ruta="muestras/muestra_TR6_ACELIM.txt" bytes="50118" sha256="586788aa14c195fba87f6560534968474987157c9cb7f2f0ce151114bfe03d00" />
+    <archivo ruta="processing-client.js" bytes="7380" sha256="2b5f3cb5f95e95433e045470357841c1fc125dafd18e31c865008c7a88dbcdc5" />
+    <archivo ruta="processing-worker.js" bytes="5220" sha256="001b81563859d28f8af4dd8dc1866a099cbeb00848d28183244a4542918e8a26" />
+    <archivo ruta="ruc.js" bytes="23070" sha256="6fa402dea24092aa09492cce5c468de1c7db5fa477bf326ec361ec1833de8cd6" />
+    <archivo ruta="script.js" bytes="57089" sha256="1273349f418bfde43380acfd30f026ffd50ce15c163ec94246b216b6f1fde14b" />
+    <archivo ruta="sheets-api.js" bytes="2260" sha256="6fc68653acfe346afb66ecd1d1e8f3a64e33c3571885043c4ff0eede20635a2b" />
+    <archivo ruta="style.css" bytes="30356" sha256="0c99a1ba9037e9949a54c5b67bdccdaee1ea357f7f9a877090a5b42fe38d0f91" />
+    <archivo ruta="tests/column-chooser.test.cjs" bytes="1592" sha256="49b7504958834d2b2ff5a2546b2fa8c3c3a1ec2c366f4a3eabd5bf16f3d3a21d" />
+    <archivo ruta="tests/company-info.test.cjs" bytes="4152" sha256="4d5916df91de7fa0d153a9fa641f9767e78ae58f88a7a3bebe57e462d3cbdb43" />
+    <archivo ruta="tests/diagnostics.test.cjs" bytes="1844" sha256="c318945d799928f1ffdb7ef593cf80b8bc71ea5c37b92c15428383b280e67bff" />
+    <archivo ruta="tests/parser.test.cjs" bytes="1657" sha256="99b3be5280f389efa6c59a6fb78df36eaa5ff6213b5ca369f96efeed63896230" />
+    <archivo ruta="tests/processing-cancel-race.test.cjs" bytes="1107" sha256="f147ac390b70ca0d86ac89dec96f106857d02cd6799518baaf9605a82db9f9e4" />
+    <archivo ruta="tests/processing.test.cjs" bytes="3562" sha256="cb53ea6d7fb6e1240dc4ebdaa19c00564eccc8b04a710c541871e0a1ebd7d176" />
+    <archivo ruta="tests/ruc.test.cjs" bytes="6158" sha256="217d4e353b12b64a597bda5d6d7cf84faf2430e5959f947d5d3bf08fd0b06328" />
+    <archivo ruta="tests/tr-analysis.test.cjs" bytes="2854" sha256="1f7fc3c2a11a1a60bf9830547f6ca428d6353443a387da9aa1e951371b34102a" />
+    <archivo ruta="tests/tr-cruce-filtros-integracion.test.cjs" bytes="6867" sha256="091b13abc335b84e90e52a9fc345f4ad8d157b07170a3d4b5ad1720c2f5f999b" />
+    <archivo ruta="tests/tr-export.test.cjs" bytes="2520" sha256="201de79129b8888439eb48a720502b8882d84b1f341deb52584e018c69fcd396" />
+    <archivo ruta="tests/tr-filters.test.cjs" bytes="2834" sha256="f75b90f27eeb149ff103eef21cbd3de54c79069fb6f8428c8b4944b55cbe5e38" />
+    <archivo ruta="tests/tr-history.test.cjs" bytes="2466" sha256="865a4daef288a48ffa331627e5f6e6cedf429b1930b49f4632398ee53d7dc715" />
+    <archivo ruta="tests/ui-carga-regresion.test.cjs" bytes="5351" sha256="763923504160e82fc0830f8b130bfc6cd998498ba119aadda29ec44ce9190e01" />
+    <archivo ruta="tests/ui-hardening-regresion.test.cjs" bytes="869" sha256="8bd3b60ed28c575f2697dee8dbac3520fb30a69309810a54e950e030fb370328" />
+    <archivo ruta="tests/ui-organizacion-regresion.test.cjs" bytes="4766" sha256="64bfa047160dca2d9c66dcb7521fe2c8e35b0f7c20bb988bff58370dbe4c066e" />
+    <archivo ruta="tr-analysis.js" bytes="42263" sha256="e37c2a46fae4edb58d219168544902ac1b84b9a68943b9f6b517d83ed4117e63" />
+    <archivo ruta="tr-export.js" bytes="15768" sha256="3cc5e2ba4e203aa41b873cf5e1770580254ad23e80fe2b96b610d83310350b8c" />
+    <archivo ruta="tr-filters.js" bytes="10160" sha256="63fd598ed7d0b3691077119970bed498f2daac2fb73c932bba7e219d2fdd9c9f" />
+    <archivo ruta="vendor/jszip.min.js" bytes="97630" sha256="acc7e41455a80765b5fd9c7ee1b8078a6d160bbbca455aeae854de65c947d59e" />
+    <archivo ruta="vendor/xlsx.bundle.js" bytes="425020" sha256="1c7abf2993ff2cd61e508f9268e9acda0098c9796f3925d2ba0d2579072653e2" />
+  </inventarioArchivos>
+</documentoTecnico>

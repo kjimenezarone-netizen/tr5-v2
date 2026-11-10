@@ -27,9 +27,12 @@ assert.equal(sheets[3].rows[1][2],' A ','Previsualización independiente de camb
 if(process.argv.length>3){
  const real=tr.build(process.argv.slice(2).map(path=>parser.parse(parser.decode(fs.readFileSync(path)).text,path)));
  const all=tr.sheets(real,real.people,{});
- assert.equal(all.find(s=>s.name==='TR5 Original').rows.length,123);
- assert.equal(all.find(s=>s.name==='TR6 Original').rows.length,122);
- assert.equal(all.find(s=>s.name==='Fuentes').rows.length,244);
- console.log('Muestras: 121 trabajadores, 122 filas TR5 y 121 filas TR6 en exportación completa.');
+ const tr5=real.datasets.find(d=>d.type==='TR5');
+ const tr6=real.datasets.find(d=>d.type==='TR6');
+ const total=real.datasets.reduce((n,d)=>n+d.records.length,0);
+ assert.equal(all.find(s=>s.name==='TR5 Original').rows.length, tr5.records.length+1);
+ assert.equal(all.find(s=>s.name==='TR6 Original').rows.length, tr6.records.length+1);
+ assert.equal(all.find(s=>s.name==='Fuentes').rows.length, total+1);
+ console.log(`Muestras: ${real.people.length} trabajadores, ${tr5.records.length} filas TR5 y ${tr6.records.length} filas TR6 exportadas sin pérdida.`);
 }
 console.log('OK: alcances, multiplicidad, histórico, originales, trazabilidad e instantánea de exportación.');

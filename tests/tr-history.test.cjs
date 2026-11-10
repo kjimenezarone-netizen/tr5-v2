@@ -26,7 +26,8 @@ if (process.argv[2]) {
     const data = parser.parse(parser.decode(fs.readFileSync(process.argv[2])).text, 'muestra');
     const people = tr.build([data]).people;
     const histories = people.map(p=>tr.history(p));
-    assert.equal(histories.reduce((n,h)=>n+h.rows.length,0),122);
-    console.log(`TR5 real: 122 filas conservadas en históricos; ${histories.reduce((n,h)=>n+h.unresolvedDates,0)} fechas sin interpretar.`);
+    const total = histories.reduce((n,h)=>n+h.rows.length,0);
+    assert.equal(total, data.records.length, 'El histórico debe conservar todas las filas TR5 reales');
+    console.log(`TR5 real: ${total} filas conservadas en históricos; ${histories.reduce((n,h)=>n+h.unresolvedDates,0)} fechas sin interpretar.`);
 }
 console.log('OK: cronología, repeticiones, vacíos, fechas imposibles, años bisiestos, campos ausentes e integridad.');

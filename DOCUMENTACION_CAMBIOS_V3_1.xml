@@ -1,0 +1,270 @@
+<?xml version='1.0' encoding='utf8'?>
+<documentoTecnico proyecto="TR5-V2" versionEntrega="3.1" fechaRevision="2026-11-05" idioma="es-PE" formato="XML-UTF8" alcance="lectores-TR5-TR6-RUC-masivo">
+  <identificacion>
+    <titulo>Informe de auditoría, corrección y reorganización de lectores TR5/TR6 y RUC Masivo</titulo>
+    <fuente>Archivo adjunto Lector TR5-TR6.rar; se extrajeron 33 archivos fuente y recursos, excluyendo .git.</fuente>
+    <estado>Código modificado y validado con pruebas automáticas; NO se ha enviado al repositorio remoto de GitHub.</estado>
+    <criterio>Cambios conservadores sobre interfaz y lógica de sesión; ninguna modificación a los TXT o XLSX de origen.</criterio>
+    <repositorio>https://github.com/kjimenezarone-netizen/tr5-v2</repositorio>
+  </identificacion>
+  <alcanceFuncional>
+    <requisito id="RF-01">La interfaz muestra cuatro pasos: 1 Cargar reportes, 2 Registros originales, 3 Trabajadores y cruce inspectivo, 4 Preparar y descargar Excel.</requisito>
+    <requisito id="RF-02">Se retira del lector TR el control "Columnas visibles del reporte TR". Todas las columnas siguen en pantalla y exportaciones.</requisito>
+    <requisito id="RF-03">Se elimina la segunda exportación que aparecía en el panel de carga. Se mantiene un centro centralizado de exportación con alcance, previsualización y descarga.</requisito>
+    <requisito id="RF-04">Los filtros rápidos del TR se muestran en tarjetas y los filtros por estado permanecen en un selector sin opciones duplicadas.</requisito>
+    <requisito id="RF-05">Los filtros secundarios de registros (tipo, ocupación y columna) están agrupados en opciones avanzadas para reducir ruido visual.</requisito>
+    <requisito id="RF-06">Al finalizar una carga correcta, se limpia únicamente el selector de TXT/ZIP; los resultados siguen disponibles hasta que el usuario decida finalizar.</requisito>
+    <requisito id="RF-07">El botón "Finalizar consulta y limpiar todo" pide confirmación y elimina datos temporales de la aplicación, sin tocar archivos originales ni descargas realizadas.</requisito>
+    <requisito id="RF-08">Descargar Excel nunca elimina automáticamente la consulta; permite descargar archivos de varios alcances.</requisito>
+    <requisito id="RF-09">RUC Masivo conserva sus hojas y registros originales, opciones de exportación, ficha de empresas y la identificación de RUC repetidos o diferentes.</requisito>
+    <requisito id="RF-10">La verificación de seguridad evita representar nombres de archivos, etiquetas de filtros y textos de fichas TR como HTML sin escapar.</requisito>
+    <requisito id="RF-11">La cancelación RUC ahora solicita efectivamente cancelar el procesamiento; también se evita que un trabajo antiguo del modo de respaldo anule uno nuevo.</requisito>
+  </alcanceFuncional>
+  <nuevoFlujoDePantallas>
+    <paso numero="1" titulo="Carga" visibilidad="siempre">Elegir TXT TR5/TR6; procesar; mostrar estado; limpiar selector solo al completar correctamente.</paso>
+    <paso numero="2" titulo="Registros originales" visibilidad="despues-de-carga">Elegir reporte fuente, consultar todas las columnas y buscar; filtros adicionales y gráficos opcionales.</paso>
+    <paso numero="3" titulo="Análisis de trabajadores" visibilidad="despues-de-carga">Identidades, tarjetas rápidas, estados, fichas, cruces, historial, búsqueda y selección.</paso>
+    <paso numero="4" titulo="Centro de exportación" visibilidad="despues-de-carga">Elegir alcance completo/filtrado/seleccionado/individual, previsualizar hojas, descargar Excel y finalizar con limpieza explícita.</paso>
+  </nuevoFlujoDePantallas>
+  <matrizDeCambios>
+    <cambio id="CH-01" archivos="index.html" area="Interfaz" prioridad="media" estado="implementado">
+      <titulo>Reordenación de pasos</titulo>
+      <implementacion>Mover registros originales al paso 2, trabajadores al paso 3 y exportación al paso 4, sin cambiar identificadores de tablas.</implementacion>
+      <resultadoEsperado>Los usuarios leen información sin saltar entre secciones.</resultadoEsperado>
+    </cambio>
+    <cambio id="CH-02" archivos="index.html" area="Interfaz" prioridad="media" estado="implementado">
+      <titulo>Eliminar selector visual de columnas TR</titulo>
+      <implementacion>Retirar únicamente el acordeón de selección visual; mostrar todas las columnas del reporte original.</implementacion>
+      <resultadoEsperado>No se modifica el esquema del TXT ni la exportación.</resultadoEsperado>
+    </cambio>
+    <cambio id="CH-03" archivos="index.html;tr-export.js" area="Exportación" prioridad="media" estado="implementado">
+      <titulo>Consolidar exportación</titulo>
+      <implementacion>Eliminar acciones redundantes; dejar un desplegable con alcances completo, filtrado, seleccionado e individual, resumen de hojas y vista previa.</implementacion>
+      <resultadoEsperado>La descarga es verificable antes de generar el XLSX.</resultadoEsperado>
+    </cambio>
+    <cambio id="CH-04" archivos="index.html;style.css" area="UX" prioridad="media" estado="implementado">
+      <titulo>Reducir saturación visual</titulo>
+      <implementacion>Colocar filtros secundarios y gráficos bajo paneles desplegables, con estilos institucionales claros y secciones separadas.</implementacion>
+      <resultadoEsperado>Pantallas más comprensibles sin pérdida de funciones.</resultadoEsperado>
+    </cambio>
+    <cambio id="CH-05" archivos="script.js" area="Sesiones" prioridad="alta" estado="implementado">
+      <titulo>Separar limpieza de selección y datos</titulo>
+      <implementacion>Diferenciar resetFileSelection (solo el input) de resetWorkspaceTR (borra estado con confirmación).</implementacion>
+      <resultadoEsperado>El botón Quitar archivo(s) deja de borrar resultados por accidente.</resultadoEsperado>
+    </cambio>
+    <cambio id="CH-06" archivos="script.js" area="Carga" prioridad="media" estado="implementado">
+      <titulo>Autolimpieza de entrada TR</titulo>
+      <implementacion>Tras TRView.set(analysis), vaciar input y tarjetas. No limpiar al fallar el proceso.</implementacion>
+      <resultadoEsperado>Se puede seleccionar otro archivo sin afectar la consulta cargada.</resultadoEsperado>
+    </cambio>
+    <cambio id="CH-07" archivos="ruc.js" area="Carga" prioridad="media" estado="implementado">
+      <titulo>Autolimpieza RUC y nueva carga</titulo>
+      <implementacion>Limpiar ruc-files después de detectar fuentes TXT válidas y restablecer búsqueda del nuevo lote; conservar archivos para reintentar si no hubo fuentes válidas.</implementacion>
+      <resultadoEsperado>La carga posterior no muestra archivos ya procesados.</resultadoEsperado>
+    </cambio>
+    <cambio id="CH-08" archivos="ruc.js;index.html" area="Exportación" prioridad="media" estado="implementado">
+      <titulo>Selector por archivo de origen contextual</titulo>
+      <implementacion>Mostrar selector ZIP/TXT de origen únicamente al elegir ese alcance de exportación.</implementacion>
+      <resultadoEsperado>Evita filtros inactivos y confusión al exportar.</resultadoEsperado>
+    </cambio>
+    <cambio id="CH-09" archivos="ruc.js" area="Procesamiento" prioridad="alta" estado="implementado">
+      <titulo>Cancelar RUC de forma efectiva</titulo>
+      <implementacion>Conectar el botón Cancelar con Processing.cancel("RUC") y no publicar resultados parciales.</implementacion>
+      <resultadoEsperado>La cancelación detiene el trabajo activo.</resultadoEsperado>
+    </cambio>
+    <cambio id="CH-10" archivos="ruc.js;index.html" area="Sesiones" prioridad="media" estado="implementado">
+      <titulo>Limpieza explícita RUC</titulo>
+      <implementacion>Añadir finalizar/limpiar con confirmación; borrar registros, selección, fichas y previsualización solo cuando el usuario lo indique.</implementacion>
+      <resultadoEsperado>Los archivos originales y los Excel descargados permanecen intactos.</resultadoEsperado>
+    </cambio>
+    <cambio id="CH-11" archivos="processing-client.js" area="Concurrencia" prioridad="alta" estado="implementado">
+      <titulo>Eliminar carrera de finalización</titulo>
+      <implementacion>Identificar cada job y descartar respuestas antiguas del fallback después de cancelación y reintento.</implementacion>
+      <resultadoEsperado>Una carga cancelada no puede borrar la referencia de una nueva.</resultadoEsperado>
+    </cambio>
+    <cambio id="CH-12" archivos="tr-analysis.js" area="Filtros" prioridad="media" estado="implementado">
+      <titulo>Filtrado rápido independiente</titulo>
+      <implementacion>Tarjetas TR activas y selector de estados sin duplicar los mismos estados. Recalcular conteo de registros múltiples incluyendo TR6.</implementacion>
+      <resultadoEsperado>Filtros y contadores consistentes.</resultadoEsperado>
+    </cambio>
+    <cambio id="CH-13" archivos="tr-analysis.js" area="Dominio" prioridad="media" estado="implementado">
+      <titulo>Información inspectiva más precisa</titulo>
+      <implementacion>Sustituir reingreso/contrato único inferidos por múltiples filas o un registro TR5; marcar SCTR Salud como indicador a verificar.</implementacion>
+      <resultadoEsperado>No se confunden indicios con incumplimientos laborales comprobados.</resultadoEsperado>
+    </cambio>
+    <cambio id="CH-14" archivos="tr-analysis.js" area="Datos" prioridad="alta" estado="implementado">
+      <titulo>Leer dos regímenes TR6 distintos</titulo>
+      <implementacion>Cuando se repite el encabezado Tipo de Régimen, usar la primera columna para salud y segunda para pensiones.</implementacion>
+      <resultadoEsperado>Evita duplicar erróneamente el valor de salud en pensiones.</resultadoEsperado>
+    </cambio>
+    <cambio id="CH-15" archivos="tr-analysis.js;script.js;tr-filters.js" area="Seguridad" prioridad="alta" estado="implementado">
+      <titulo>Escapado de valores externos</titulo>
+      <implementacion>Escapar datos externos insertados en tarjetas y fichas, insertar filtros como textContent, tolerar valores nulos.</implementacion>
+      <resultadoEsperado>Reduce riesgo de inyección HTML a partir de contenidos TXT y nombres de archivos.</resultadoEsperado>
+    </cambio>
+    <cambio id="CH-16" archivos="tr-filters.js" area="Filtros" prioridad="media" estado="implementado">
+      <titulo>Prevenir condiciones duplicadas</titulo>
+      <implementacion>No agregar dos reglas idénticas para mismo campo, operador y valor; mostrar aviso.</implementacion>
+      <resultadoEsperado>Evita operaciones redundantes en el buscador.</resultadoEsperado>
+    </cambio>
+    <cambio id="CH-17" archivos="script.js" area="Mantenimiento" prioridad="media" estado="implementado">
+      <titulo>Quitar código sin referencias y render duplicado</titulo>
+      <implementacion>Eliminar readAsIso y fetchWithRetry sin usos; evitar renderizar dos veces la tabla cuando el resultado es vacío.</implementacion>
+      <resultadoEsperado>Menor complejidad sin retirar componentes activos.</resultadoEsperado>
+    </cambio>
+    <cambio id="CH-18" archivos="script.js" area="Resiliencia" prioridad="media" estado="implementado">
+      <titulo>Gráficos opcionales si Chart.js no carga</titulo>
+      <implementacion>Procesar TXT aunque la biblioteca de gráficos externa no esté disponible; renderizar gráficos solamente cuando Chart existe.</implementacion>
+      <resultadoEsperado>El procesamiento básico no depende de una librería de visualización.</resultadoEsperado>
+    </cambio>
+    <cambio id="CH-19" archivos="tests/tr-analysis.test.cjs;tests/tr-export.test.cjs;tests/tr-filters.test.cjs;tests/tr-history.test.cjs" area="QA" prioridad="media" estado="implementado">
+      <titulo>Pruebas con números de muestra reales</titulo>
+      <implementacion>Sustituir conteos fijos no coincidentes con el RAR por aserciones dinámicas contra las fuentes cargadas.</implementacion>
+      <resultadoEsperado>Evita falsas fallas y verifica integridad de cualquier muestra compatible.</resultadoEsperado>
+    </cambio>
+    <cambio id="CH-20" archivos="tests/ui-carga-regresion.test.cjs;tests/ui-organizacion-regresion.test.cjs;tests/ui-hardening-regresion.test.cjs;tests/processing-cancel-race.test.cjs" area="QA" prioridad="media" estado="implementado">
+      <titulo>Pruebas nuevas de regresión</titulo>
+      <implementacion>Agregar pruebas de estructura HTML, limpieza de entradas, cancelación, seguridad y carreras de concurrencia.</implementacion>
+      <resultadoEsperado>Cobertura automática de los cambios de interfaz y estados.</resultadoEsperado>
+    </cambio>
+    <cambio id="CH-21" archivos="index.html;processing-worker.js" area="Despliegue" prioridad="media" estado="implementado">
+      <titulo>Actualización de versiones cacheadas</titulo>
+      <implementacion>Cambiar las URLs de estilos, scripts del lector y dependencias importadas por Worker a la versión 3.1 para evitar reusar archivos antiguos tras el despliegue.</implementacion>
+      <resultadoEsperado>La versión publicada utiliza los recursos correspondientes al mismo cambio.</resultadoEsperado>
+    </cambio>
+  </matrizDeCambios>
+  <reglasDeIntegridad>
+    <invariante id="INT-01">Nunca eliminar filas originales por RUC/documento repetido; cada registro conserva fuente y línea.</invariante>
+    <invariante id="INT-02">Conservar cabeceras originales, incluidas columnas vacías y nombres repetidos, y mantener ceros iniciales de identificadores.</invariante>
+    <invariante id="INT-03">El selector de columnas de la interfaz no puede cambiar la estructura de las hojas exportadas.</invariante>
+    <invariante id="INT-04">Los filtros solo afectan vistas o alcances explícitos de exportación; no modifican el dataset.</invariante>
+    <invariante id="INT-05">Las hojas de origen deben incluir todas las filas del alcance elegido sin deduplicación silenciosa.</invariante>
+    <invariante id="INT-06">La limpieza tras la carga NO puede llamar a las rutinas que reinician la sesión.</invariante>
+    <invariante id="INT-07">Las descargas no producen reseteo automático; el borrado de resultados requiere confirmación.</invariante>
+    <invariante id="INT-08">La elección de intendencia se mantiene al cambiar de lector durante la misma sesión.</invariante>
+    <invariante id="INT-09">La captura visual de una ficha debe escapar contenido proveniente de archivos externos.</invariante>
+  </reglasDeIntegridad>
+  <verificacion>
+    <resultado tipo="automatizada" exito="true">21 pruebas Node completadas correctamente, sin fallos (node --test).</resultado>
+    <resultado tipo="sintaxis" exito="true">Sintaxis de todos los archivos JavaScript verificada con node --check.</resultado>
+    <resultado tipo="estructura" exito="true">Estructura HTML de cuatro pasos revisada; 151 IDs únicos; sin el selector de columnas TR.</resultado>
+    <resultado tipo="datos" exito="true">Muestras de usuario: 6 TR5 + 121 TR6 = 127 filas conservadas, 121 identidades, 4 presentes en ambos reportes.</resultado>
+    <resultado tipo="regresion-con-muestras" exito="true">Pruebas de análisis, histórico, filtros y Excel ejecutadas también con las muestras del RAR.</resultado>
+    <resultado tipo="navegador" exito="pendiente">No fue posible completar pruebas end-to-end visuales con Chromium en el entorno, por bloqueo del navegador (ERR_BLOCKED_BY_ADMINISTRATOR).</resultado>
+    <resultado tipo="integracion-remota" exito="pendiente">No se verificó la disponibilidad ni configuración del servicio Apps Script institucional.</resultado>
+  </verificacion>
+  <casosDePruebaManualRecomendados>
+    <caso id="QA-01" nombre="TXT TR5 válido">La importación muestra resultados; el selector vuelve a vacío y el Excel completo conserva todas las filas.</caso>
+    <caso id="QA-02" nombre="Pareja TR5 + TR6">Se validan RUC iguales, se calcula cruce sin filas perdidas, se distinguen dos regímenes TR6.</caso>
+    <caso id="QA-03" nombre="TR inválido y cancelación">El sistema informa error/cancelación; no se inventan registros ni se marca éxito.</caso>
+    <caso id="QA-04" nombre="Filtro TR avanzado">El filtro actúa sobre trabajadores consolidados con condiciones de misma fila y permite eliminar reglas.</caso>
+    <caso id="QA-05" nombre="Filtro original por tipo/ocupación">Solo cambia la tabla de filas originales; no altera los archivos en memoria ni el Excel completo.</caso>
+    <caso id="QA-06" nombre="Alcances Excel TR">Completo, filtrado, seleccionado e individual devuelven las filas correctas con trazabilidad.</caso>
+    <caso id="QA-07" nombre="Limpiar todo TR">Solicita confirmación, borra resultados temporalmente y permite una nueva carga.</caso>
+    <caso id="QA-08" nombre="Cancelar limpieza TR">Cancelar el diálogo deja todos los resultados en pantalla.</caso>
+    <caso id="QA-09" nombre="TXT y ZIP RUC">La importación válida borra la selección del input; se conservan empresas, registros y observaciones.</caso>
+    <caso id="QA-10" nombre="Cancelar RUC">El botón interrumpe el proceso sin publicar resultados parciales.</caso>
+    <caso id="QA-11" nombre="Exportación por archivo RUC">El selector de origen aparece solo con alcance por archivo.</caso>
+    <caso id="QA-12" nombre="Limpiar RUC">Se eliminan tablas, filtros, selección y ficha únicamente tras confirmación.</caso>
+    <caso id="QA-13" nombre="Valores con caracteres HTML">Un valor como &amp;lt;texto&amp;gt; se muestra literalmente y no ejecuta elementos HTML.</caso>
+    <caso id="QA-14" nombre="Validación responsive">Revisar escritorio, tablet y móvil en navegador real, incluyendo tablas con scroll horizontal.</caso>
+  </casosDePruebaManualRecomendados>
+  <instruccionesImplementacion>
+    <nota>El ZIP entregado ya contiene el proyecto corregido; no es necesario aplicar otro kit ni ejecutar un parche adicional.</nota>
+    <paso numero="01" accion="Extraer el ZIP">
+      <detalle>Extraiga TR5V2_Proyecto_Completo_Corregido_v3_1.zip en una carpeta de Windows. Dentro verá index.html, JS, CSS, tests, vendor, apps-script y documentacion.</detalle>
+    </paso>
+    <paso numero="02" accion="Abrir en VS Code">
+      <detalle>Archivo &gt; Abrir carpeta &gt; seleccione TR5V2_Proyecto_Revisado.</detalle>
+    </paso>
+    <paso numero="03" accion="Revisar código y ejecutar pruebas">
+      <detalle>Abra Terminal &gt; Nuevo terminal. Requiere Node.js 18+; en Node.js 22 fue validado.</detalle>
+    </paso>
+    <paso numero="04" accion="Pruebas">
+      <detalle>Ejecute node --test. Debe mostrar 21 pruebas aprobadas; si se cambia el código, repita todas.</detalle>
+    </paso>
+    <paso numero="05" accion="Iniciar servidor web local">
+      <detalle>Si dispone de Python, en la carpeta del proyecto ejecute py -m http.server 8000 y abra http://localhost:8000 en Chrome o Edge. Alternativa: extensión Live Server de VS Code.</detalle>
+    </paso>
+    <paso numero="06" accion="Probar funcionalmente">
+      <detalle>Seleccione intendencia, importe TR5/TR6 y RUC, pruebe búsqueda y selección, previsualice, descargue Excel y luego Finalizar consulta y limpiar todo.</detalle>
+    </paso>
+    <paso numero="07" accion="Crear rama en Git">
+      <detalle>Trabaje en una rama nueva; evite sustituir directamente la rama main.</detalle>
+    </paso>
+    <paso numero="08" accion="Copiar archivos al clon">
+      <detalle>Dentro de la carpeta clonada desde GitHub, copie el contenido del proyecto corregido (no copie archivos .git de otra carpeta). Revise git status y git diff antes de confirmar.</detalle>
+    </paso>
+    <paso numero="09" accion="Confirmar y publicar">
+      <detalle>Ejecute node --test, git add -A, git commit, git push de su rama y cree un Pull Request hacia main.</detalle>
+    </paso>
+    <paso numero="10" accion="Validación final en producción">
+      <detalle>Después de fusionar, recargue con Ctrl+F5 para evitar caché del navegador; repita las pruebas de carga, fichas, filtros y exportación.</detalle>
+    </paso>
+    <comandosWindowsPowerShell>
+      <comando objetivo="validar-sintaxis">node --check script.js; node --check ruc.js; node --check tr-analysis.js; node --check tr-export.js; node --check processing-client.js</comando>
+      <comando objetivo="pruebas-automatizadas">node --test</comando>
+      <comando objetivo="servidor-local">py -m http.server 8000</comando>
+      <comando objetivo="clonar-y-crear-rama">git clone https://github.com/kjimenezarone-netizen/tr5-v2.git
+cd tr5-v2
+git switch -c mejora/reorganizacion-lectores-v3-1</comando>
+      <comando objetivo="revisar-y-subir">git status
+git diff --check
+node --test
+git add -A
+git commit -m "feat: reorganizar TR5-TR6 y RUC masivo; limpiar interfaz"
+git push -u origin mejora/reorganizacion-lectores-v3-1</comando>
+      <comando objetivo="reversion">git revert &lt;SHA_DEL_COMMIT&gt;</comando>
+    </comandosWindowsPowerShell>
+  </instruccionesImplementacion>
+  <limitacionesYPrecauciones>
+    <precaucion tipo="publicacion">Los cambios NO se subieron al GitHub conectado. Se debe publicar desde el equipo con permisos de escritura.</precaucion>
+    <precaucion tipo="navegador">La revisión end-to-end visual quedó pendiente debido al bloqueo administrativo de Chromium en este entorno.</precaucion>
+    <precaucion tipo="bibliotecas">Chart.js, Tailwind CDN y html2pdf dependen de recursos externos; si la red institucional los bloquea, verificar su carga o adoptar copias locales autorizadas.</precaucion>
+    <precaucion tipo="formatos">El lector RUC implementa TXT y ZIP; no hay soporte confirmado de RAR ni TAR en este proyecto. No renombrar RAR/TAR como ZIP.</precaucion>
+    <precaucion tipo="privacidad">El proyecto contiene muestras con información de trabajadores/empresas. Antes de publicarlas en un repositorio público, revisar su anonimización y las normas institucionales de protección de datos.</precaucion>
+    <precaucion tipo="seguridad">Para publicar en internet se recomienda evaluar cabeceras CSP, autenticación de dashboard, política de dependencias y despliegue de Apps Script por separado.</precaucion>
+    <precaucion tipo="versionamiento">La descarga contiene el código corregido sin la carpeta .git para evitar incluir historial de credenciales y configuraciones locales.</precaucion>
+    <precaucion tipo="originales">Se conservaron los módulos de procesamiento, lógica de cruce, lecturas de TXT/ZIP y los ficheros vendor. No se eliminó ni normalizó ninguna columna fuente.</precaucion>
+    <precaucion tipo="alcancePruebas">Las pruebas del motor y de contrato de UI pasaron; los clics y el aspecto de UI en navegador real deben comprobarse en Windows antes del despliegue.</precaucion>
+  </limitacionesYPrecauciones>
+  <inventarioArchivos alcance="codigo-y-pruebas-sin-documentacion">
+    <archivo ruta=".kilo/.gitignore" bytes="107" sha256="1ff25b005585f501edf16194863ece8eef55d50d46eed6322095aabdf6eafb40"/>
+    <archivo ruta=".kilo/agents/data.md" bytes="1387" sha256="00cf5f65313814f145bc21d17297f819a3712bed8aca67e19bbacadc5494e89f"/>
+    <archivo ruta="PLAN_V2.md" bytes="12757" sha256="8750acd1a3ea7587111b7d64e5a3dd3e0344acbe3f7b396424d9e05ea33e19ff"/>
+    <archivo ruta="apps-script/Code.gs" bytes="7275" sha256="3ac085b50dfacd9ed37f1d3320d8d41be4a5a5148fbeea0bcf4c516f49c5147c"/>
+    <archivo ruta="apps-script/INSTALACION.md" bytes="3757" sha256="968008b318bc24b8d3589f0758857e58ea616e12f2d6bcca8bf045eb18433205"/>
+    <archivo ruta="apps-script/backend.test.cjs" bytes="1732" sha256="ff6cb72b1223fcc7c871ae71047b11cf569d1349ef7019482a2dad79ebbfd7e5"/>
+    <archivo ruta="column-chooser.js" bytes="2269" sha256="045db527ef7901f29871c39b3d04f4ceee78bdf29d79552b7d9fbcadfc9c33bd"/>
+    <archivo ruta="diagnostics.js" bytes="3866" sha256="ba6ddd0ea57422f2d4c32e85a7a5989781910d312c3e913867eb9770c8b31298"/>
+    <archivo ruta="file-parser.js" bytes="4688" sha256="6d4965fddf70f37c41932823338bd89dda0c6c45dfd7ab70c89fd966ece31fbe"/>
+    <archivo ruta="index.html" bytes="57757" sha256="857eb121bfc878de48eca62a4f77fe5560b171fc7e180aed4956e10cde7f2393"/>
+    <archivo ruta="muestras/muestra_TR5_ACELIM.txt" bytes="3589" sha256="06f589197dbf51c183cfc7ab09af17b3a2013e55023371f8017e2446bbfbbcd7"/>
+    <archivo ruta="muestras/muestra_TR6_ACELIM.txt" bytes="50118" sha256="586788aa14c195fba87f6560534968474987157c9cb7f2f0ce151114bfe03d00"/>
+    <archivo ruta="processing-client.js" bytes="7380" sha256="2b5f3cb5f95e95433e045470357841c1fc125dafd18e31c865008c7a88dbcdc5"/>
+    <archivo ruta="processing-worker.js" bytes="5220" sha256="001b81563859d28f8af4dd8dc1866a099cbeb00848d28183244a4542918e8a26"/>
+    <archivo ruta="ruc.js" bytes="23070" sha256="6fa402dea24092aa09492cce5c468de1c7db5fa477bf326ec361ec1833de8cd6"/>
+    <archivo ruta="script.js" bytes="59788" sha256="6107a92187db7a64d9963201161c0df045de3a96482da9d33cc89c3ea50d367d"/>
+    <archivo ruta="sheets-api.js" bytes="2260" sha256="6fc68653acfe346afb66ecd1d1e8f3a64e33c3571885043c4ff0eede20635a2b"/>
+    <archivo ruta="style.css" bytes="30356" sha256="0c99a1ba9037e9949a54c5b67bdccdaee1ea357f7f9a877090a5b42fe38d0f91"/>
+    <archivo ruta="tests/column-chooser.test.cjs" bytes="1592" sha256="49b7504958834d2b2ff5a2546b2fa8c3c3a1ec2c366f4a3eabd5bf16f3d3a21d"/>
+    <archivo ruta="tests/company-info.test.cjs" bytes="4152" sha256="4d5916df91de7fa0d153a9fa641f9767e78ae58f88a7a3bebe57e462d3cbdb43"/>
+    <archivo ruta="tests/diagnostics.test.cjs" bytes="1844" sha256="c318945d799928f1ffdb7ef593cf80b8bc71ea5c37b92c15428383b280e67bff"/>
+    <archivo ruta="tests/parser.test.cjs" bytes="1657" sha256="99b3be5280f389efa6c59a6fb78df36eaa5ff6213b5ca369f96efeed63896230"/>
+    <archivo ruta="tests/processing-cancel-race.test.cjs" bytes="1107" sha256="f147ac390b70ca0d86ac89dec96f106857d02cd6799518baaf9605a82db9f9e4"/>
+    <archivo ruta="tests/processing.test.cjs" bytes="3562" sha256="cb53ea6d7fb6e1240dc4ebdaa19c00564eccc8b04a710c541871e0a1ebd7d176"/>
+    <archivo ruta="tests/ruc.test.cjs" bytes="6158" sha256="217d4e353b12b64a597bda5d6d7cf84faf2430e5959f947d5d3bf08fd0b06328"/>
+    <archivo ruta="tests/tr-analysis.test.cjs" bytes="2854" sha256="1f7fc3c2a11a1a60bf9830547f6ca428d6353443a387da9aa1e951371b34102a"/>
+    <archivo ruta="tests/tr-export.test.cjs" bytes="2520" sha256="201de79129b8888439eb48a720502b8882d84b1f341deb52584e018c69fcd396"/>
+    <archivo ruta="tests/tr-filters.test.cjs" bytes="2834" sha256="f75b90f27eeb149ff103eef21cbd3de54c79069fb6f8428c8b4944b55cbe5e38"/>
+    <archivo ruta="tests/tr-history.test.cjs" bytes="2466" sha256="865a4daef288a48ffa331627e5f6e6cedf429b1930b49f4632398ee53d7dc715"/>
+    <archivo ruta="tests/ui-carga-regresion.test.cjs" bytes="5351" sha256="763923504160e82fc0830f8b130bfc6cd998498ba119aadda29ec44ce9190e01"/>
+    <archivo ruta="tests/ui-hardening-regresion.test.cjs" bytes="869" sha256="8bd3b60ed28c575f2697dee8dbac3520fb30a69309810a54e950e030fb370328"/>
+    <archivo ruta="tests/ui-organizacion-regresion.test.cjs" bytes="4766" sha256="64bfa047160dca2d9c66dcb7521fe2c8e35b0f7c20bb988bff58370dbe4c066e"/>
+    <archivo ruta="tr-analysis.js" bytes="37878" sha256="5ceafbdbc20947007df076e08a4ddb960d8bac347b01da3f6730ae93abb1953c"/>
+    <archivo ruta="tr-export.js" bytes="14469" sha256="3134ddac1ff2237d9774ba03b7e7a070b59f24a81427783e1a7e6c48f7d24fdd"/>
+    <archivo ruta="tr-filters.js" bytes="6384" sha256="b2ef21ba1bfe6d596db9171f0fd74d268a5d9ed82dc4293afff30a5cd75c8b17"/>
+    <archivo ruta="vendor/jszip.min.js" bytes="97630" sha256="acc7e41455a80765b5fd9c7ee1b8078a6d160bbbca455aeae854de65c947d59e"/>
+    <archivo ruta="vendor/xlsx.bundle.js" bytes="425020" sha256="1c7abf2993ff2cd61e508f9268e9acda0098c9796f3925d2ba0d2579072653e2"/>
+  </inventarioArchivos>
+</documentoTecnico>

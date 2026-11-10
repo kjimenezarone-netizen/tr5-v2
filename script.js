@@ -49,28 +49,6 @@ const Utils = {
             .replace(/"/g, "&quot;")
             .replace(/'/g, "&#39;");
     },
-    readAsIso(f) {
-        return new Promise(res => {
-            let r = new FileReader();
-            r.onload = () => res(r.result);
-            r.readAsText(f, "ISO-8859-1");
-        });
-    },
-    // Retry con backoff exponencial para llamadas al backend
-    async fetchWithRetry(url, options = {}, maxRetries = 3) {
-        let delay = 1000;
-        for (let attempt = 1; attempt <= maxRetries; attempt++) {
-            try {
-                const res = await fetch(url, options);
-                if (res.ok) return res;
-                throw new Error(`HTTP ${res.status}`);
-            } catch (err) {
-                if (attempt === maxRetries) throw err;
-                await new Promise(r => setTimeout(r, delay));
-                delay *= 2;
-            }
-        }
-    },
     showToast(message, type = 'error') {
         const container = document.getElementById('toast-container');
         if (!container) return;
@@ -129,12 +107,12 @@ const UI = {
     toggleProcessor() {
         const int = document.getElementById('intendencia').value;
         AppState.intendencia = int;
-        ['nav_procesador', 'nav_ruc', 'open-tr', 'open-ruc', 'file_input', 'btn_process_data', 'btn_download_excel'].forEach(id => {
+        ['nav_procesador', 'nav_ruc', 'open-tr', 'open-ruc', 'file_input', 'btn_process_data'].forEach(id => {
             document.getElementById(id).disabled = !int;
         });
         document.getElementById('intendencia-help').textContent = int
-            ? 'Esta intendencia se mantiene al cambiar de módulo y se utiliza para las estadísticas de uso.'
-            : 'Seleccione su intendencia para acceder a los módulos.';
+            ? '✓ Sede activa.'
+            : '⚠ Seleccione su intendencia para habilitar los módulos.';
         if (!int && ['procesador', 'ruc'].includes(AppState.activePage)) UI.showPage('inicio');
         const zone = document.getElementById('upload-zone');
         if (int !== "") {
@@ -172,7 +150,7 @@ const UI = {
                         <svg xmlns="http://www.w3.org/2000/svg" class="h-7 w-7 ${iconColor} flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
                         <div class="flex flex-col text-left">
                             <span class="text-xs font-black uppercase tracking-wider">${typeLabel}</span>
-                            <span class="text-xs font-semibold text-gray-800 break-all">${shortName}</span>
+                            <span class="text-xs font-semibold text-gray-800 break-all">${Utils.escapeHTML(shortName)}</span>
                             <span class="text-[10px] text-gray-500">${sizekb} KB</span>
                         </div>
                     </div>`;
@@ -188,32 +166,56 @@ const UI = {
             }
         }
     },
+    resetFileSelection() {
+        // Libera la selección del input sin alterar tablas, datasets ni exportaciones.
+        const input = document.getElementById('file_input');
+        if (input) input.value = '';
+        document.getElementById('file-cards')?.replaceChildren();
+        const status = document.getElementById('file_status');
+        if (status) status.textContent = '';
+        document.getElementById('label-content-default')?.classList.remove('hidden');
+        const info = document.getElementById('file-info-container');
+        info?.classList.add('hidden');
+        info?.classList.remove('flex');
+    },
     clearFile(event) {
         if (event) {
             event.preventDefault();
             event.stopPropagation();
         }
-        const fileInput = document.getElementById('file_input');
-        const labelDefault = document.getElementById('label-content-default');
-        const infoContainer = document.getElementById('file-info-container');
-        const fileCards = document.getElementById('file-cards');
-        const status = document.getElementById('file_status');
-
-        fileInput.value = "";
-        if (fileCards) fileCards.innerHTML = '';
-        if (status) status.textContent = '';
-        labelDefault.classList.remove('hidden');
-        infoContainer.classList.add('hidden');
-        infoContainer.classList.remove('flex');
-
-        document.getElementById('preview_section').classList.add('hidden');
+        UI.resetFileSelection();
+    },
+    resetWorkspaceTR() {
+        if (AppState.trBusy) return;
+        if (!window.confirm('¿Finalizar esta consulta? Se borrarán los resultados, filtros, fichas y vistas del lector TR. Sus archivos TXT y los Excel descargados no se modifican.')) return;
+        UI.resetFileSelection();
+        clearTimeout(AppState.searchDebounceTimeout);
+        AppState.searchDebounceTimeout = null;
         AppState.globalRows = [];
-        AppState.sourceDataset = null;
-        AppState.trDatasets.forEach(dataset => ColumnChooser.reset(dataset));
-        AppState.trDatasets = [];
-        TRView.reset();
+        AppState.globalCols = [];
         AppState.currentFilteredRows = [];
         AppState.currentPage = 1;
+        AppState.trDatasets = [];
+        AppState.sourceDataset = null;
+        TRView.reset();
+        TRExport.invalidate();
+        document.getElementById('preview_section').classList.add('hidden');
+        document.getElementById('company_list').replaceChildren();
+        document.getElementById('company_container').classList.add('hidden');
+        document.getElementById('file_metrics_container').classList.add('hidden');
+        document.getElementById('tr-source-select').replaceChildren();
+        // Eliminar también los nodos de tablas y previsualizaciones ocultas.
+        ['tr-person-body', 'tr-person-detail', 'tr-export-sheets', 'tr-export-sample',
+            'tr-export-summary', 'tr-export-dataset-info', 'table_body', 'table_head',
+            'tr-person-summary', 'tr-selection-count'].forEach(id => {
+                document.getElementById(id)?.replaceChildren();
+            });
+        document.getElementById('search_box').value = '';
+        if (window.chartFileTipo) { window.chartFileTipo.destroy(); window.chartFileTipo = null; }
+        if (window.chartFileOcup) { window.chartFileOcup.destroy(); window.chartFileOcup = null; }
+        document.getElementById('tr-processing-status').textContent = 'Consulta finalizada. Puede cargar un nuevo reporte.';
+        document.getElementById('tr-reset-all').disabled = true;
+        document.getElementById('tr-reset-all-bottom').disabled = true;
     },
     renderInfoBox(data) {
         const container = document.getElementById('company_list');
@@ -275,8 +277,8 @@ const UI = {
         this.renderCurrentPage();
     },
     renderCurrentPage() {
-        const cols = ColumnChooser.visible(AppState.sourceDataset, AppState.globalCols);
-        ColumnChooser.mount('tr-column-options', AppState.sourceDataset, AppState.globalCols, () => UI.renderCurrentPage());
+        // Se muestran todas las columnas del TXT; se retiró el control de visibilidad redundante.
+        const cols = AppState.globalCols;
         document.getElementById('table_head').innerHTML = cols.map(c => `<th class="px-4 py-3 border-b whitespace-nowrap">${Utils.escapeHTML(c)}</th>`).join('');
         const startIndex = (AppState.currentPage - 1) * AppState.pageSize;
         const endIndex = Math.min(startIndex + AppState.pageSize, AppState.currentFilteredRows.length);
@@ -310,23 +312,10 @@ const UI = {
             conteoOcup[o] = (conteoOcup[o] || 0) + 1;
         });
 
-        // 1. Rellenar Combobox de Filtros
-        const selectTipo = document.getElementById('filter_tipo');
-        if (selectTipo) {
-            selectTipo.innerHTML = '<option value="">-- Todos los Tipos --</option>' +
-                Object.keys(conteoTipos).sort().map(t => `<option value="${Utils.escapeHTML(t)}">${Utils.escapeHTML(t)}</option>`).join('');
-        }
-
-        const selectOcup = document.getElementById('filter_ocupacion');
-        if (selectOcup) {
-            selectOcup.innerHTML = '<option value="">-- Todas las Ocupaciones --</option>' +
-                Object.keys(conteoOcup).sort().map(o => `<option value="${Utils.escapeHTML(o)}">${Utils.escapeHTML(o)}</option>`).join('');
-        }
-
         // --- 2. Dibujar Gráficos Minilíticos ---
         const ctxTipo = document.getElementById('chart-file-tipo');
         if (window.chartFileTipo) window.chartFileTipo.destroy();
-        if (ctxTipo) {
+        if (ctxTipo && typeof Chart !== 'undefined') {
             const labelsT = Object.keys(conteoTipos);
             const dataT = Object.values(conteoTipos);
             const coloresT = labelsT.map((_, i) => `hsla(${(i * 360) / (labelsT.length || 1)}, 70%, 55%, 0.8)`);
@@ -340,7 +329,7 @@ const UI = {
 
         const ctxOcup = document.getElementById('chart-file-ocup');
         if (window.chartFileOcup) window.chartFileOcup.destroy();
-        if (ctxOcup) {
+        if (ctxOcup && typeof Chart !== 'undefined') {
             const topOcups = Object.entries(conteoOcup).sort((a, b) => b[1] - a[1]).slice(0, 5);
             const labelsO = topOcups.map(e => e[0]);
             const dataO = topOcups.map(e => e[1]);
@@ -374,15 +363,19 @@ const Core = {
         const processingStarted = performance.now();
         const processingOffice = AppState.intendencia;
         AppState.trBusy = true;
+        document.getElementById('tr-reset-all').disabled = true;
+        document.getElementById('tr-reset-all-bottom').disabled = true;
         document.getElementById('tr-cancel').disabled = false;
         document.getElementById('btn_clear_file').disabled = true;
 
         try {
+            clearTimeout(AppState.searchDebounceTimeout);
+            AppState.searchDebounceTimeout = null;
+            document.getElementById('search_box').value = '';
             AppState.globalRows = [];
             AppState.globalCols = [];
             AppState.currentFilteredRows = [];
             AppState.sourceDataset = null;
-            AppState.trDatasets.forEach(dataset => ColumnChooser.reset(dataset));
             AppState.trDatasets = [];
             if (typeof TRView !== 'undefined' && TRView.reset) TRView.reset();
             document.getElementById('preview_section').classList.add('hidden');
@@ -402,17 +395,6 @@ const Core = {
             UI.drawTable(AppState.globalRows, AppState.globalCols);
             UI.renderFileMetricsAndFilters(AppState.globalRows);
 
-            //el selector de búsqueda por columna
-            const selectCol = document.getElementById('filter_columna');
-            if (selectCol) {
-                selectCol.innerHTML = '<option value="">🔍 Todas las columnas</option>' +
-                    AppState.globalCols
-                        .filter(c => c !== 'N°')
-                        .map(c => `<option value="${Utils.escapeHTML(c)}">${Utils.escapeHTML(c)}</option>`)
-                        .join('');
-            }
-
-
             document.getElementById('preview_section').classList.remove('hidden');
             // Actualizar tarjetas de archivo con datos reales del dataset procesado
             const fileCards = document.getElementById('file-cards');
@@ -428,7 +410,7 @@ const Core = {
                         <div class="flex flex-col text-left">
                             <div class="flex items-center gap-2">
                                 <span class="text-xs font-black uppercase tracking-wider">${d.type}</span>
-                                <span class="text-[11px] font-medium text-gray-500">${shortFile}</span>
+                                <span class="text-[11px] font-medium text-gray-500">${Utils.escapeHTML(shortFile)}</span>
                             </div>
                             <span class="text-xs font-bold text-gray-800">${d.records.length} trabajadores · ${d.columns.length} columnas</span>
                             ${diag}
@@ -443,9 +425,12 @@ const Core = {
             const sourceSelect = document.getElementById('tr-source-select');
             sourceSelect.replaceChildren(...datasets.map((d, i) => { const option = document.createElement('option'); option.value = String(i); option.textContent = `${d.type} — ${d.sourceFile}`; return option; }));
             TRView.set(analysis);
-            document.getElementById('tr-processing-status').textContent = 'Carga finalizada.';
+            document.getElementById('tr-reset-all').disabled = false;
+            document.getElementById('tr-reset-all-bottom').disabled = false;
+            UI.resetFileSelection(); // Solo al terminar correctamente. Mantener TRView y AppState.
+            document.getElementById('tr-processing-status').textContent = 'Carga finalizada. Puede seleccionar nuevos TXT; los resultados siguen disponibles.';
 
-            Dashboard.registrarEnDrive('VISUALIZACIÓN', {intendencia:processingOffice,modulo:datasets.length === 2 ? 'TR5_TR6' : dataset.type,registros:datasets.reduce((n,d)=>n+d.records.length,0),archivos:files.length,bytes:files.reduce((n,f)=>n+f.size,0),duracionMs:performance.now()-processingStarted});
+            Dashboard.registrarEnDrive('VISUALIZACIÓN', { intendencia: processingOffice, modulo: datasets.length === 2 ? 'TR5_TR6' : dataset.type, registros: datasets.reduce((n, d) => n + d.records.length, 0), archivos: files.length, bytes: files.reduce((n, f) => n + f.size, 0), duracionMs: performance.now() - processingStarted });
 
         } catch (error) {
             document.getElementById('tr-processing-status').textContent = error.message;
@@ -453,6 +438,9 @@ const Core = {
             console.error("Detalle del error:", error);
         } finally {
             AppState.trBusy = false;
+            const hasResults = !!TRView.analysis;
+            document.getElementById('tr-reset-all').disabled = !hasResults;
+            document.getElementById('tr-reset-all-bottom').disabled = !hasResults;
             document.getElementById('tr-cancel').disabled = true;
             document.getElementById('btn_clear_file').disabled = false;
             document.getElementById('loader').style.display = 'none';
@@ -467,8 +455,6 @@ const Core = {
         AppState.sourceDataset = dataset; AppState.globalRows = rows; AppState.globalCols = cols;
         UI.renderInfoBox(Core.extractCompanyInfo(dataset.text.split(/\r\n|\n|\r/), dataset));
         document.getElementById('search_box').value = '';
-        const select = document.getElementById('filter_columna');
-        select.replaceChildren(...['', ...cols].map(c => { const option = document.createElement('option'); option.value = c; option.textContent = c || 'Todas las columnas'; return option; }));
         UI.drawTable(rows, cols); UI.renderFileMetricsAndFilters(rows);
     },
 
@@ -521,42 +507,21 @@ const Core = {
         clearTimeout(AppState.searchDebounceTimeout);
         AppState.searchDebounceTimeout = setTimeout(() => {
             const query = document.getElementById('search_box').value.toLowerCase().trim();
-            const filterTipo = document.getElementById('filter_tipo')?.value || "";
-            const filterOcup = document.getElementById('filter_ocupacion')?.value || "";
-            const filterCol = document.getElementById('filter_columna')?.value || "";
-
             AppState.currentFilteredRows = AppState.globalRows.filter(row => {
                 let match = true;
 
-                // Dropdowns de tipo y ocupación
-                if (filterTipo && row["Tipo Doc."] !== filterTipo) match = false;
-                if (filterOcup && row["Ocupación"] !== filterOcup) match = false;
-
-                // Búsqueda de texto: en columna específica o en todas
-                if (match && query) {
-                    if (filterCol) {
-                        match = String(row[filterCol] || '').toLowerCase().includes(query);
-                    } else {
-                        match = Object.values(row).some(val => String(val).toLowerCase().includes(query));
-                    }
+                if (query) {
+                    match = Object.values(row).some(value => String(value ?? '').toLowerCase().includes(query));
                 }
 
                 return match;
             });
 
             AppState.currentPage = 1;
-            UI.renderCurrentPage();
-
-            if (AppState.currentFilteredRows.length === 0) {
-                UI.renderCurrentPage();
-                document.getElementById('pagination_container').classList.add('hidden');
-            }
+            UI.renderCurrentPage(); // La tabla decide si oculta su paginador.
         }, 300);
     },
 
-    downloadExcel() {
-        TRExport.preview();
-    }
 };
 
 // dashboard
@@ -577,7 +542,7 @@ const Dashboard = {
 
         try {
 
-            const data = await SheetsAPI.request({accion:'LOGIN',user:u,password:p});
+            const data = await SheetsAPI.request({ accion: 'LOGIN', user: u, password: p });
 
             if (data.status === 'ok' && data.token) {
                 // Login exitoso 
@@ -599,7 +564,7 @@ const Dashboard = {
             } else {
                 //Login fallido
                 if (data.status === 'not_configured') return Utils.showToast('Configure ADMIN_USER y ADMIN_PASSWORD en Apps Script.');
-                if (data.status === 'locked') { AppState.lockoutUntil = Date.now()+15*60*1000; return Utils.showToast('Acceso temporalmente bloqueado por el servidor. Espere 15 minutos.'); }
+                if (data.status === 'locked') { AppState.lockoutUntil = Date.now() + 15 * 60 * 1000; return Utils.showToast('Acceso temporalmente bloqueado por el servidor. Espere 15 minutos.'); }
                 AppState.loginAttempts++;
                 const restantes = Math.max(0, 5 - AppState.loginAttempts);
 
@@ -619,7 +584,7 @@ const Dashboard = {
         }
     },
     logout() {
-        if (AppState.sessionToken) SheetsAPI.request({accion:'LOGOUT',token:AppState.sessionToken}).catch(() => {});
+        if (AppState.sessionToken) SheetsAPI.request({ accion: 'LOGOUT', token: AppState.sessionToken }).catch(() => { });
         AppState.isLoggedIn = false;
         AppState.sessionToken = null;
         // Limpiar datos personales de la memoria del navegador
@@ -659,8 +624,8 @@ const Dashboard = {
                 // usar datos en cache — evita martillar GAS con 400 usuarios
                 allData = AppState.dashboardCache;
             } else {
-                allData = await SheetsAPI.request({accion:'DASHBOARD',token:AppState.sessionToken});
-                if (!['ok','unauthorized'].includes(allData.status)) throw new Error('No se pudo consultar el dashboard.');
+                allData = await SheetsAPI.request({ accion: 'DASHBOARD', token: AppState.sessionToken });
+                if (!['ok', 'unauthorized'].includes(allData.status)) throw new Error('No se pudo consultar el dashboard.');
                 // guardar en cache
                 AppState.dashboardCache = allData;
                 AppState.dashboardCacheTime = ahora;
@@ -1014,15 +979,19 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('tr-cancel').addEventListener('click', () => Processing.cancel('TR'));
     // Procesador
     document.getElementById('tr-source-select').addEventListener('change', event => Core.switchSource(Number(event.target.value)));
+    document.getElementById('tr-charts-details')?.addEventListener('toggle', event => {
+        if (!event.target.open) return;
+        requestAnimationFrame(() => {
+            window.chartFileTipo?.resize();
+            window.chartFileOcup?.resize();
+        });
+    });
     document.getElementById('intendencia')?.addEventListener('change', UI.toggleProcessor);
     document.getElementById('file_input')?.addEventListener('change', UI.updateFileStatus);
     document.getElementById('btn_clear_file')?.addEventListener('click', UI.clearFile);
     document.getElementById('btn_process_data')?.addEventListener('click', () => Core.processData());
-    document.getElementById('btn_download_excel')?.addEventListener('click', Core.downloadExcel);
+    ['tr-reset-all', 'tr-reset-all-bottom'].forEach(id => document.getElementById(id)?.addEventListener('click', () => UI.resetWorkspaceTR()));
     document.getElementById('search_box')?.addEventListener('input', Core.runFilter);
-    document.getElementById('filter_columna')?.addEventListener('change', Core.runFilter);  // ✅ nuevo
-    document.getElementById('filter_tipo')?.addEventListener('change', Core.runFilter);
-    document.getElementById('filter_ocupacion')?.addEventListener('change', Core.runFilter);
 
     // Modo Oscuro — toggle + persistencia
     const btnDark = document.getElementById('btn-dark-mode');

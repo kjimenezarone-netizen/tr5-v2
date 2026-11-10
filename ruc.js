@@ -50,13 +50,18 @@ const RucModel = {
         if (scope === 'zip') return model.records.filter(r => String(r.source.zipId) === zipId);
         throw new Error('Alcance no reconocido.');
     },
+    // El alcance de descarga depende exclusivamente de los filtros de la sección 2.
+    exportForView(model, currentRows, query, mode) {
+        const active = Boolean(String(query ?? '').trim()) || mode !== 'all';
+        return (active ? currentRows : model.records).slice();
+    },
     exportSheets(records, context) {
         const sources = [...new Set(records.map(r => r.source))];
         const sheets = [{ name: 'Resumen', rows: [
             ['Concepto', 'Valor'], ['Intendencia', context.intendencia], ['Alcance', context.scope],
             ['Búsqueda en la vista', context.query], ['Filtro en la vista', context.filter],
             ['Registros', records.length], ['RUC únicos', new Set(records.filter(r => /^\d{11}$/.test(r.ruc)).map(r => r.ruc)).size],
-            ['Nota', 'Solo el alcance Resultado filtrado aplica la búsqueda y el filtro. Seleccionados incluye todas las apariciones de cada empresa seleccionada.']
+            ['Nota', 'Se conservan las columnas originales, los valores, las filas repetidas y la trazabilidad de los registros exportados.']
         ] }];
         sources.forEach((source, i) => {
             sheets.push({ name: `Original_${i + 1}`, rows: [
@@ -98,13 +103,9 @@ if (typeof module !== 'undefined' && module.exports) module.exports = RucModel;
 
 if (typeof document !== 'undefined') document.addEventListener('DOMContentLoaded', () => {
     const el = id => document.getElementById(id);
-    let model = RucModel.consolidate([]), page = 0, busy = false, cancelled = false;
-    let rejectedSources = 0;
-    const selected = new Set();
-    let filtered = [], preview = null, currentRuc = null;
+    let model = RucModel.consolidate([]), page = 0, busy = false;
+    let filtered = [];
     function showCompany(ruc) {
-        currentRuc = ruc;
-        invalidatePreview();
         const records = model.groups.get(ruc) || [];
         el('ruc-detail-title').textContent = `Empresa ${ruc} · ${records.length} apariciones`;
         const sections = new Map(['Datos generales', 'Ubicación', 'Actividad', 'Información tributaria', 'Otros campos'].map(name => [name, []]));
@@ -136,41 +137,23 @@ if (typeof document !== 'undefined') document.addEventListener('DOMContentLoaded
         el('ruc-detail').classList.remove('hidden');
         el('ruc-detail-title').focus();
     }
-    function invalidatePreview() {
-        preview = null;
-        el('ruc-export-preview').classList.add('hidden');
-        el('ruc-download').disabled = true;
-    }
     const status = text => { el('ruc-status').textContent = text; };
     const cell = (tag, value) => { const node = document.createElement(tag); node.textContent = value; return node; };
     function render() {
         const query = el('ruc-search').value.trim().toLocaleLowerCase();
         const mode = el('ruc-filter').value;
-        filtered = model.records.filter(r => (!query || r.rawCells.some(v => v.toLocaleLowerCase().includes(query)))
-            && (mode === 'all' || (mode === 'selected' ? selected.has(RucModel.selectionKey(r)) : (mode === 'repeated' ? model.repeated : model.differences).has(r.ruc))));
+        filtered = model.records.filter(r => (!query || r.rawCells.some(v => String(v ?? '').toLocaleLowerCase().includes(query)))
+            && (mode === 'all' || model.repeated.has(r.ruc)));
         const uniqueView = el('ruc-view').value === 'companies';
         const visible = uniqueView ? [...new Map(filtered.filter(r => model.groups.has(r.ruc)).map(r => [r.ruc, r])).values()] : filtered;
         page = Math.max(0, Math.min(page, Math.ceil(visible.length / 50) - 1));
         el('ruc-metrics').textContent = `${model.sources.length} TXT · ${model.records.length} registros originales · ${model.groups.size} RUC únicos · ${model.repeated.size} RUC repetidos · ${model.differences.size} RUC con diferencias · ${filtered.length} registros filtrados`;
-        const allLabels = [...new Set(model.sources.flatMap(s => s.dataset.columns.map(c => c.label)))];
-        const labels = ColumnChooser.visible('ruc-records', allLabels);
-        ColumnChooser.mount('ruc-column-options', 'ruc-records', allLabels, render);
-        el('ruc-column-control').classList.toggle('hidden', uniqueView);
+        const labels = [...new Set(model.sources.flatMap(s => s.dataset.columns.map(c => c.label)))];
         const head = document.createElement('tr');
-        (uniqueView ? ['Seleccionar empresa', 'RUC', 'Razón social (valores registrados)', 'Apariciones totales', 'Campos con diferencias', 'Ficha'] : ['Seleccionar empresa', 'ZIP', 'TXT', 'Fila', ...labels, 'Original', 'Ficha']).forEach(label => head.appendChild(cell('th', label)));
+        (uniqueView ? ['RUC', 'Razón social (valores registrados)', 'Apariciones totales', 'Campos con diferencias', 'Ficha'] : ['ZIP', 'TXT', 'Fila', ...labels, 'Original', 'Ficha']).forEach(label => head.appendChild(cell('th', label)));
         el('ruc-head').replaceChildren(head);
         const rows = visible.slice(page * 50, page * 50 + 50).map(record => {
             const row = document.createElement('tr');
-            const selectCell = document.createElement('td'), checkbox = document.createElement('input');
-            checkbox.type = 'checkbox';
-            const selectionKey = RucModel.selectionKey(record);
-            checkbox.checked = selected.has(selectionKey);
-            checkbox.setAttribute('aria-label', `Seleccionar ${record.ruc || 'registro sin RUC'}, fila ${record.sourceRow}`);
-            checkbox.addEventListener('change', () => {
-                if (checkbox.checked) selected.add(selectionKey); else selected.delete(selectionKey);
-                invalidatePreview(); render();
-            });
-            selectCell.appendChild(checkbox); row.appendChild(selectCell);
             const action = document.createElement('td'), button = cell('button', 'Ver empresa');
             button.disabled = !model.groups.has(record.ruc);
             button.addEventListener('click', () => showCompany(record.ruc)); action.appendChild(button);
@@ -195,8 +178,15 @@ if (typeof document !== 'undefined') document.addEventListener('DOMContentLoaded
         el('ruc-page').textContent = visible.length ? `${visible.length} ${uniqueView ? 'empresas' : 'registros'} · Página ${page + 1} de ${Math.ceil(visible.length / 50)}` : 'Sin resultados';
         el('ruc-prev').disabled = page === 0;
         el('ruc-next').disabled = (page + 1) * 50 >= visible.length;
-        el('ruc-selection-count').textContent = `${[...selected].filter(k => k.startsWith('ruc:')).length} empresas seleccionadas · ${[...selected].filter(k => k.startsWith('row:')).length} registros sin RUC seleccionados · ${RucModel.exportRecords(model, 'selected', selected, filtered).length} registros incluidos`;
-        el('ruc-preview-button').disabled = busy || !model.records.length;
+        const currentExport = RucModel.exportForView(model, filtered, query, mode);
+        const filterIsActive = Boolean(query) || mode !== 'all';
+        el('ruc-export-hint').textContent = filterIsActive
+            ? `Descargar resultado filtrado: ${currentExport.length} registros de la sección 2.`
+            : model.records.length
+                ? `Descargar archivo completo: ${currentExport.length} registros originales.`
+                : 'Cargue archivos TXT o ZIP para habilitar la descarga.';
+        el('ruc-download').disabled = busy || !currentExport.length;
+        el('ruc-reset-all').disabled = busy || (!model.records.length && !model.sources.length);
     }
     el('ruc-load').addEventListener('click', async () => {
         if (!UI.requireIntendencia() || busy) return;
@@ -204,75 +194,97 @@ if (typeof document !== 'undefined') document.addEventListener('DOMContentLoaded
         if (!files.length) return status('Seleccione uno o varios archivos (ZIP o TXT).');
         if (files.some(f => /\.zip$/i.test(f.name)) && typeof JSZip === 'undefined') return status('No se pudo cargar el lector ZIP. Recargue la página.');
         const processingStarted=performance.now(), processingOffice=AppState.intendencia;
-        busy = true; cancelled = false;
-        rejectedSources = 0; el('ruc-diagnostic-preview').replaceChildren();
+        busy = true;
         el('ruc-load').disabled = true; el('ruc-cancel').disabled = false; el('ruc-files').disabled = true;
         const sources = [], issues = [];
-        model = RucModel.consolidate([]); selected.clear(); invalidatePreview();
-        ColumnChooser.reset('ruc-records');
-        currentRuc = null; el('ruc-detail').classList.add('hidden');
-        el('ruc-export-zip').replaceChildren();
+        model = RucModel.consolidate([]);
+        el('ruc-detail').classList.add('hidden');
         page = 0; render(); el('ruc-issues').replaceChildren();
         try {
             const result = await Processing.run('RUC', files, status);
             model = result.model;
             if (model.sources.length) SheetsAPI.event('VISUALIZACIÓN',{intendencia:processingOffice,modulo:'RUC',registros:model.records.length,archivos:files.length,bytes:files.reduce((n,f)=>n+f.size,0),duracionMs:performance.now()-processingStarted});
-            sources.push(...model.sources); issues.push(...result.issues); rejectedSources = result.rejectedSources;
-            const zipNames = new Map(sources.map(s => [s.zipId, s.zipName]));
-            zipNames.forEach((name, id) => {
-                const option = cell('option', `${id + 1}. ${name}`); option.value = String(id); el('ruc-export-zip').appendChild(option);
-            });
+            sources.push(...model.sources); issues.push(...result.issues);
+            if (model.sources.length) { el('ruc-search').value = ''; el('ruc-filter').value = 'all'; }
             render();
             el('ruc-issues').replaceChildren(...issues.map(issue => cell('li', issue)));
-            status(`Carga finalizada: ${sources.length} TXT procesados y ${issues.length} observaciones. Los datos se mantienen en este navegador.`);
+            if (model.sources.length > 0) {
+                el('ruc-files').value = ''; // No elimina el modelo ni los resultados.
+                status(`Carga finalizada: ${sources.length} TXT procesados y ${issues.length} observaciones. Puede elegir nuevos archivos; los resultados se mantienen.`);
+            } else {
+                status(`No se procesó ningún TXT. Revise las ${issues.length} observaciones y corrija los archivos antes de reintentar.`);
+            }
         } catch (error) { status(error.name === 'AbortError' ? error.message : `No se pudo completar la carga: ${error.message}`); }
         finally { busy = false; el('ruc-load').disabled = !AppState.intendencia; el('ruc-cancel').disabled = true; el('ruc-files').disabled = false; render(); }
     });
-    el('ruc-cancel').addEventListener('click', () => { cancelled = true; status('Cancelando carga…'); });
-    el('ruc-diagnostic-prepare').addEventListener('click', () => {
-        if (!UI.requireIntendencia() || busy) return;
-        if (cancelled || (!model.sources.length && !rejectedSources)) return status('Complete una carga para preparar su diagnóstico.');
-        const datasets = model.sources.map(s => ({...s.dataset,encoding:s.encoding}));
-        Diagnostics.preview('ruc-diagnostic-preview',Diagnostics.build(datasets,'RUC',rejectedSources));
+    el('ruc-reset-all').addEventListener('click', () => {
+        if (busy || (!model.records.length && !model.sources.length)) return;
+        if (!window.confirm('¿Finalizar esta consulta RUC? Se borrarán los registros, filtros y fichas de esta pantalla. Los archivos originales y Excel descargados no se modifican.')) return;
+        model = RucModel.consolidate([]);
+        filtered = []; page = 0;
+        el('ruc-files').value = '';
+        el('ruc-search').value = '';
+        el('ruc-filter').value = 'all';
+        el('ruc-view').value = 'records';
+        el('ruc-view-records').classList.add('active');
+        el('ruc-view-companies').classList.remove('active');
+        el('ruc-detail').classList.add('hidden');
+        el('ruc-detail-content').replaceChildren();
+        el('ruc-issues').replaceChildren();
+        el('ruc-head').replaceChildren();
+        el('ruc-body').replaceChildren();
+        render();
+        status('Consulta RUC finalizada. Puede cargar nuevos archivos.');
     });
-    el('ruc-view').addEventListener('change', () => { page = 0; invalidatePreview(); render(); });
+    el('ruc-cancel').addEventListener('click', () => {
+        if (!busy) return;
+        Processing.cancel('RUC');
+        status('Carga cancelada. No se publicaron resultados parciales.');
+    });
+    el('ruc-view').addEventListener('change', () => { page = 0; render(); });
     el('ruc-detail-close').addEventListener('click', () => { el('ruc-detail').classList.add('hidden'); });
-    el('ruc-detail-export').addEventListener('click', () => { el('ruc-export-scope').value = 'company'; el('ruc-preview-button').click(); el('ruc-export-preview').scrollIntoView({ block: 'nearest' }); });
-    el('ruc-search').addEventListener('input', () => { invalidatePreview(); page = 0; render(); });
-    el('ruc-filter').addEventListener('change', () => { invalidatePreview(); page = 0; render(); });
-    el('ruc-select-filtered').addEventListener('click', () => { filtered.forEach(r => selected.add(RucModel.selectionKey(r))); invalidatePreview(); render(); });
-    el('ruc-clear-selection').addEventListener('click', () => { selected.clear(); invalidatePreview(); render(); });
-    ['ruc-export-scope', 'ruc-export-zip', 'intendencia'].forEach(id => el(id).addEventListener('change', invalidatePreview));
-    el('ruc-preview-button').addEventListener('click', () => {
-        if (!UI.requireIntendencia() || busy) return;
-        invalidatePreview();
-        const scope = el('ruc-export-scope');
-        const records = RucModel.exportRecords(model, scope.value, selected, filtered, el('ruc-export-zip').value, currentRuc);
-        if (!records.length) return status('El alcance elegido no contiene registros.');
-        const sheets = RucModel.exportSheets(records, { intendencia: AppState.intendencia, scope: scope.selectedOptions[0].textContent, query: el('ruc-search').value, filter: el('ruc-filter').selectedOptions[0].textContent, consolidated: ['consolidated', 'company'].includes(scope.value) });
-        if (sheets.some(s => s.rows.length > 1048576 || s.rows.some(row => row.length > 16384 || row.some(v => typeof v === 'string' && v.length > 32767)))) return status('Los datos exceden los límites de Excel. Reduzca el alcance para evitar pérdida de información.');
-        preview = { sheets, intendencia: AppState.intendencia, metadata:{intendencia:AppState.intendencia,modulo:'RUC',registros:records.length,archivos:new Set(records.map(r=>r.source.zipId)).size} };
-        el('ruc-export-summary').textContent = `${scope.selectedOptions[0].textContent}: ${records.length} registros, ${new Set(records.filter(r => /^\d{11}$/.test(r.ruc)).map(r => r.ruc)).size} RUC únicos. Se conservarán todas las columnas de cada fuente.`;
-        el('ruc-export-sheets').replaceChildren(...sheets.map(s => cell('li', `${s.name}: ${s.rows.length - 1} filas · ${s.rows[0].length} columnas`)));
-        const sample = document.createElement('tbody');
-        records.slice(0, 5).forEach(r => { const row = document.createElement('tr'); [r.source.zipName, r.source.entryName, r.sourceRow, ...r.rawCells].forEach(v => row.appendChild(cell('td', v))); sample.appendChild(row); });
-        el('ruc-export-sample').replaceChildren(sample);
-        el('ruc-export-preview').classList.remove('hidden'); el('ruc-download').disabled = false;
-    });
+    el('ruc-search').addEventListener('input', () => { page = 0; render(); });
+    el('ruc-filter').addEventListener('change', () => { page = 0; render(); });
+    // Descarga inmediata con el mismo conjunto de registros mostrado en la sección 2.
     el('ruc-download').addEventListener('click', () => {
-        if (!UI.requireIntendencia() || !preview || busy) return;
-        if (preview.intendencia !== AppState.intendencia) return invalidatePreview();
+        if (!UI.requireIntendencia() || busy) return;
+        const query = el('ruc-search').value.trim();
+        const mode = el('ruc-filter').value;
+        const filterIsActive = Boolean(query) || mode !== 'all';
+        const records = RucModel.exportForView(model, filtered, query, mode);
+        if (!records.length) return status('La búsqueda o filtro actual no contiene registros para descargar.');
+
+        const scopeLabel = filterIsActive ? 'Resultado filtrado de la sección 2' : 'Todos los registros originales';
+        const sheets = RucModel.exportSheets(records, {
+            intendencia: AppState.intendencia,
+            scope: scopeLabel,
+            query,
+            filter: el('ruc-filter').selectedOptions[0].textContent,
+            consolidated: false
+        });
+        if (sheets.some(s => s.rows.length > 1048576 || s.rows.some(row => row.length > 16384 || row.some(v => typeof v === 'string' && v.length > 32767)))) {
+            return status('Los datos exceden los límites de Excel. Reduzca los filtros para evitar pérdida de información.');
+        }
         try {
             const workbook = XLSX.utils.book_new();
-            preview.sheets.forEach(s => {
-                const rawSheet = XLSX.utils.aoa_to_sheet(s.rows);
-                const ws = (typeof TRExport !== 'undefined' && TRExport.formatWorksheet) ? TRExport.formatWorksheet(rawSheet, s.name) : rawSheet;
-                XLSX.utils.book_append_sheet(workbook, ws, s.name);
+            sheets.forEach(sheet => {
+                const rawSheet = XLSX.utils.aoa_to_sheet(sheet.rows);
+                const ws = (typeof TRExport !== 'undefined' && TRExport.formatWorksheet)
+                    ? TRExport.formatWorksheet(rawSheet, sheet.name)
+                    : rawSheet;
+                XLSX.utils.book_append_sheet(workbook, ws, sheet.name);
             });
-            XLSX.writeFile(workbook, `RUC_${preview.intendencia}.xlsx`);
-            SheetsAPI.event('DESCARGAR_EXCEL',preview.metadata);
-            status('Excel generado con el alcance previsualizado.');
-        } catch (error) { status(`No se pudo generar el Excel: ${error.message}`); }
+            XLSX.writeFile(workbook, `RUC_${AppState.intendencia}.xlsx`);
+            SheetsAPI.event('DESCARGAR_EXCEL', {
+                intendencia: AppState.intendencia,
+                modulo: 'RUC',
+                registros: records.length,
+                archivos: new Set(records.map(r => r.source.zipId)).size
+            });
+            status(`Excel generado correctamente: ${records.length} registros (${scopeLabel.toLocaleLowerCase()}).`);
+        } catch (error) {
+            status(`No se pudo generar el Excel: ${error.message}`);
+        }
     });
     el('ruc-prev').addEventListener('click', () => { page--; render(); });
     el('ruc-next').addEventListener('click', () => { page++; render(); });

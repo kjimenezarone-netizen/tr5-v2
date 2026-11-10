@@ -2,14 +2,16 @@ const TRExport = {
     snapshot: null,
     invalidate() {
         this.snapshot = null;
-        document.getElementById('tr-export-preview').classList.add('hidden');
-        document.getElementById('tr-export-download').disabled = true;
+        const prev = document.getElementById('tr-export-preview');
+        if (prev) prev.classList.add('hidden');
     },
     syncScopeOptions() {
         // Calcula el estado actual para mostrar/ocultar opciones del desplegable
         const hasSearch = (document.getElementById('tr-person-search')?.value || '').trim() !== '';
-        const hasFilter = document.getElementById('tr-person-filter')?.value !== 'all';
+        const hasFilter = document.getElementById('tr-person-filter')?.value !== 'all' || TRView.activeQuickFilter !== 'all';
         const hasAdvanced = TRFilterUI.rules.length > 0;
+        const hasWorkerType = Boolean(document.getElementById('tr-worker-type')?.value);
+        const hasWorkerOccupation = Boolean(document.getElementById('tr-worker-occupation')?.value);
         const hasSelected = TRView.selected && TRView.selected.size > 0;
         const hasCurrent = !!TRView.current;
 
@@ -29,13 +31,20 @@ const TRExport = {
             }
         };
 
+        const info = document.getElementById('tr-export-dataset-info');
+        if (info && TRView.analysis) {
+            const a = TRView.analysis;
+            const total = a.datasets.reduce((n, d) => n + d.records.length, 0);
+            const types = a.datasets.map(d => d.type).join(' + ');
+            info.textContent = `${types} · ${a.datasets.length} archivo(s) · ${a.people.length} trabajadores · ${total} registros originales · ${a.company || 'Entidad sin razón social identificada'}`;
+        }
         const filteredCount = TRView.filtered ? TRView.filtered.length : 0;
         const selectedCount = TRView.selected ? TRView.selected.size : 0;
 
-        setOption('tr-scope-filtered', hasSearch || hasFilter || hasAdvanced,
-            filteredCount > 0 ? `${filteredCount} trabajadores` : null);
+        setOption('tr-scope-filtered', hasSearch || hasFilter || hasAdvanced || hasWorkerType || hasWorkerOccupation,
+            filteredCount > 0 ? `${filteredCount} ${filteredCount === 1 ? 'trabajador' : 'trabajadores'}` : null);
         setOption('tr-scope-selected', hasSelected,
-            selectedCount > 0 ? `${selectedCount} marcados` : null);
+            selectedCount > 0 ? `${selectedCount} ${selectedCount === 1 ? 'marcado' : 'marcados'}` : null);
         setOption('tr-scope-individual', hasCurrent);
 
         // Actualizar hint según opción seleccionada
@@ -44,7 +53,7 @@ const TRExport = {
         if (scope && hint) {
             const hints = {
                 all: 'Se exportarán todos los trabajadores del reporte con sus filas completas de TR5 y TR6.',
-                filtered: 'Se exportarán solo los trabajadores que coinciden con la búsqueda y filtros activos.',
+                filtered: 'Se exportarán únicamente los trabajadores que cumplen la búsqueda combinada, con todas sus filas TR5/TR6 y columnas originales.',
                 selected: 'Se exportarán solo los trabajadores que tiene marcados con el checkbox.',
                 individual: 'Se exportará únicamente el trabajador cuya ficha está abierta actualmente.'
             };
@@ -58,17 +67,37 @@ const TRExport = {
         const el = id=>document.getElementById(id), scope = el('tr-export-scope');
         const people = TRAnalysis.scope(TRView.analysis,scope.value,TRView.selected,TRView.filtered,TRView.current);
         if (!people.length) return Utils.showToast('El alcance elegido no contiene trabajadores. Seleccione trabajadores o abra una ficha.', 'info');
-        const filterDescription = [el('tr-person-filter').selectedOptions[0].textContent,...TRFilterUI.descriptions()].join(' · ');
+        const quickLabels = { multiple: 'Múltiples registros', no_cuspp: 'CUSPP no registrado', no_sctr: 'SCTR salud no detectado' };
+        const enabledSelect = id => { const node = el(id); return node?.value ? node.selectedOptions[0]?.textContent : null; };
+        const criteria = [
+            TRView.activeQuickFilter !== 'all' ? quickLabels[TRView.activeQuickFilter] :
+                el('tr-person-filter').value !== 'all' ? el('tr-person-filter').selectedOptions[0].textContent : null,
+            el('tr-person-search').value.trim() ? `Campo: ${el('tr-worker-field').selectedOptions[0].textContent}` : null,
+            enabledSelect('tr-worker-type') ? `Tipo documento: ${enabledSelect('tr-worker-type')}` : null,
+            enabledSelect('tr-worker-occupation') ? `Oficio u ocupación: ${enabledSelect('tr-worker-occupation')}` : null,
+            ...TRFilterUI.descriptions()
+        ];
+        const filterDescription = criteria.filter(Boolean).join(' · ') || 'Sin filtros';
         const sheets = TRAnalysis.sheets(TRView.analysis,people,{intendencia:AppState.intendencia,scope:scope.selectedOptions[0].textContent,query:el('tr-person-search').value,filter:filterDescription});
         if (sheets.some(s=>s.rows.length>1048576 || s.rows.some(r=>r.length>16384 || r.some(v=>typeof v==='string' && v.length>32767)))) return Utils.showToast('El alcance supera los límites de Excel. Redúzcalo para evitar pérdida de datos.', 'info');
-        this.snapshot = {sheets,intendencia:AppState.intendencia,metadata:{intendencia:AppState.intendencia,modulo:TRView.analysis.datasets.length===2?'TR5_TR6':TRView.analysis.datasets[0].type,registros:people.reduce((n,p)=>n+p.TR5.length+p.TR6.length,0),archivos:TRView.analysis.datasets.length}};
-        el('tr-export-summary').textContent = `${scope.selectedOptions[0].textContent}: ${people.length} trabajadores · ${people.reduce((n,p)=>n+p.TR5.length+p.TR6.length,0)} registros. Se incluyen todas las columnas originales.`;
-        el('tr-export-summary').textContent += ` Filtros de la vista: ${filterDescription}. Solo se aplican al alcance Trabajadores filtrados.`;
-        el('tr-export-sheets').replaceChildren(...sheets.map(s=>{ const li=document.createElement('li'); li.textContent=`${s.name}: ${s.rows.length-1} filas · ${s.rows[0].length} columnas`; return li; }));
-        const table = el('tr-export-sample'); table.replaceChildren();
-        sheets[1].rows.slice(0,6).forEach((values,index)=>{const row=document.createElement('tr');values.forEach(value=>{const cell=document.createElement(index?'td':'th');cell.textContent=value;row.appendChild(cell);});table.appendChild(row);});
-        el('tr-export-preview').classList.remove('hidden'); el('tr-export-download').disabled=false;
-        el('tr-export-preview').scrollIntoView({block:'nearest'});
+        this.snapshot = {sheets,intendencia:AppState.intendencia,scopeCode:scope.value,metadata:{intendencia:AppState.intendencia,modulo:TRView.analysis.datasets.length===2?'TR5_TR6':TRView.analysis.datasets[0].type,registros:people.reduce((n,p)=>n+p.TR5.length+p.TR6.length,0),archivos:TRView.analysis.datasets.length}};
+        const summ = el('tr-export-summary');
+        if (summ) {
+            summ.textContent = `${scope.selectedOptions[0].textContent}: ${people.length} ${people.length === 1 ? 'trabajador' : 'trabajadores'} · ${people.reduce((n,p)=>n+p.TR5.length+p.TR6.length,0)} registros. Se incluyen todas las columnas originales.`;
+            summ.textContent += scope.value === 'filtered'
+                ? ` Criterios aplicados: ${filterDescription}. Se conservan todas las filas TR5/TR6 asociadas.`
+                : ` Exportación ${scope.value === 'all' ? 'completa sin recorte' : 'según alcance seleccionado'}. Filtros activos en pantalla: ${filterDescription}.`;
+        }
+        const sheetsEl = el('tr-export-sheets');
+        if (sheetsEl) sheetsEl.replaceChildren(...sheets.map(s=>{ const li=document.createElement('li'); li.textContent=`${s.name}: ${s.rows.length-1} filas · ${s.rows[0].length} columnas`; return li; }));
+        const table = el('tr-export-sample');
+        if (table && sheets[1]) {
+            table.replaceChildren();
+            sheets[1].rows.slice(0,6).forEach((values,index)=>{const row=document.createElement('tr');values.forEach(value=>{const cell=document.createElement(index?'td':'th');cell.textContent=value;row.appendChild(cell);});table.appendChild(row);});
+        }
+        el('tr-export-preview')?.classList.remove('hidden');
+        if (el('tr-export-download')) el('tr-export-download').disabled=false;
+        el('tr-export-preview')?.scrollIntoView({block:'nearest'});
     },
     getFilename(analysis, intendencia) {
         let company = (analysis?.company || '').trim();
@@ -208,52 +237,69 @@ const TRExport = {
         return ws;
     },
     download() {
-        if (!UI.requireIntendencia() || AppState.trBusy || !this.snapshot) return;
-        if (this.snapshot.intendencia!==AppState.intendencia) return this.invalidate();
-        try {
-            const workbook = XLSX.utils.book_new();
-            this.snapshot.sheets.forEach(s => {
-                const rawSheet = XLSX.utils.aoa_to_sheet(s.rows);
-                const styledSheet = this.formatWorksheet(rawSheet, s.name);
-                XLSX.utils.book_append_sheet(workbook, styledSheet, s.name);
-            });
-            const filename = this.getFilename(TRView.analysis, this.snapshot.intendencia);
-            XLSX.writeFile(workbook, filename);
-            Dashboard.registrarEnDrive('DESCARGAR_EXCEL',this.snapshot.metadata);
-            Utils.showToast(`Excel descargado correctamente: ${filename}`, 'success');
-        } catch(error) { Utils.showToast(`No se pudo generar el Excel: ${error.message}`); }
-    },
-    quickDownload() {
         if (!UI.requireIntendencia() || AppState.trBusy) return;
-        if (!TRView.analysis) return Utils.showToast('Primero cargue los reportes TR5 o TR6.', 'info');
-        const people = TRView.analysis.people;
-        if (!people.length) return Utils.showToast('No hay trabajadores para exportar.', 'info');
-        try {
-            const sheets = TRAnalysis.sheets(TRView.analysis, people, {
+        if (!TRView.analysis) return Utils.showToast('Primero cargue y visualice los reportes.', 'info');
+
+        let sheets = this.snapshot?.sheets;
+        let scopeCode = this.snapshot?.scopeCode;
+        let metadata = this.snapshot?.metadata;
+
+        // Si no se hizo preview previo, preparar y estructurar el alcance directamente
+        if (!sheets || this.snapshot?.intendencia !== AppState.intendencia) {
+            const scope = document.getElementById('tr-export-scope');
+            scopeCode = scope ? scope.value : 'all';
+            const people = TRAnalysis.scope(TRView.analysis, scopeCode, TRView.selected, TRView.filtered, TRView.current);
+            if (!people.length) return Utils.showToast('El alcance elegido no contiene trabajadores. Seleccione trabajadores o abra una ficha.', 'info');
+
+            const quickLabels = { multiple: 'Múltiples registros', no_cuspp: 'CUSPP no registrado', no_sctr: 'SCTR salud no detectado' };
+            const enabledSelect = id => { const node = document.getElementById(id); return node?.value ? node.selectedOptions[0]?.textContent : null; };
+            const criteria = [
+                TRView.activeQuickFilter !== 'all' ? quickLabels[TRView.activeQuickFilter] :
+                    document.getElementById('tr-person-filter')?.value !== 'all' ? document.getElementById('tr-person-filter')?.selectedOptions[0]?.textContent : null,
+                document.getElementById('tr-person-search')?.value.trim() ? `Campo: ${document.getElementById('tr-worker-field')?.selectedOptions[0]?.textContent}` : null,
+                enabledSelect('tr-worker-type') ? `Tipo documento: ${enabledSelect('tr-worker-type')}` : null,
+                enabledSelect('tr-worker-occupation') ? `Oficio u ocupación: ${enabledSelect('tr-worker-occupation')}` : null,
+                ...(typeof TRFilterUI !== 'undefined' ? TRFilterUI.descriptions() : [])
+            ];
+            const filterDescription = criteria.filter(Boolean).join(' · ') || 'Sin filtros';
+            const scopeLabel = scope?.selectedOptions[0]?.textContent || 'Archivo completo';
+            sheets = TRAnalysis.sheets(TRView.analysis, people, {
                 intendencia: AppState.intendencia,
-                scope: 'Completo (Informe de Inspección)',
-                query: '',
-                filter: 'Sin filtros aplicados'
+                scope: scopeLabel,
+                query: document.getElementById('tr-person-search')?.value || '',
+                filter: filterDescription
             });
+            metadata = {
+                intendencia: AppState.intendencia,
+                modulo: TRView.analysis.datasets.length === 2 ? 'TR5_TR6' : TRView.analysis.datasets[0].type,
+                registros: people.reduce((n, p) => n + p.TR5.length + p.TR6.length, 0),
+                archivos: TRView.analysis.datasets.length
+            };
+        }
+
+        if (sheets.some(s => s.rows.length > 1048576 || s.rows.some(r => r.length > 16384 || r.some(v => typeof v === 'string' && v.length > 32767)))) {
+            return Utils.showToast('El alcance supera los límites de Excel. Redúzcalo para evitar pérdida de datos.', 'info');
+        }
+
+        try {
             const workbook = XLSX.utils.book_new();
             sheets.forEach(s => {
                 const rawSheet = XLSX.utils.aoa_to_sheet(s.rows);
                 const styledSheet = this.formatWorksheet(rawSheet, s.name);
                 XLSX.utils.book_append_sheet(workbook, styledSheet, s.name);
             });
-            const filename = this.getFilename(TRView.analysis, AppState.intendencia);
+            const filenameBase = this.getFilename(TRView.analysis, AppState.intendencia);
+            const filename = scopeCode && scopeCode !== 'all'
+                ? filenameBase.replace(/\.xlsx$/i, `_${scopeCode}.xlsx`)
+                : filenameBase;
             XLSX.writeFile(workbook, filename);
-            Dashboard.registrarEnDrive('DESCARGAR_EXCEL', {
-                intendencia: AppState.intendencia,
-                modulo: TRView.analysis.datasets.length === 2 ? 'TR5_TR6' : TRView.analysis.datasets[0].type,
-                registros: people.reduce((n, p) => n + p.TR5.length + p.TR6.length, 0),
-                archivos: TRView.analysis.datasets.length
-            });
+            Dashboard.registrarEnDrive('DESCARGAR_EXCEL', metadata);
             Utils.showToast(`Excel descargado correctamente: ${filename}`, 'success');
         } catch(error) {
             Utils.showToast(`No se pudo generar el Excel: ${error.message}`);
         }
-    }
+    },
+
 };
 if (typeof document !== 'undefined') {
     document.addEventListener('DOMContentLoaded',()=>{
@@ -264,10 +310,14 @@ if (typeof document !== 'undefined') {
                 TRExport.syncScopeOptions();
             });
         });
-        document.getElementById('tr-export-prepare').addEventListener('click',()=>TRExport.preview());
-        document.getElementById('tr-export-download').addEventListener('click',()=>TRExport.download());
+        const prepBtn = document.getElementById('tr-export-prepare');
+        if (prepBtn) prepBtn.addEventListener('click',()=>TRExport.preview());
+        const dlBtn = document.getElementById('tr-export-download');
+        if (dlBtn) dlBtn.addEventListener('click',()=>TRExport.download());
         const directBtn = document.getElementById('tr-direct-download-excel');
-        if (directBtn) directBtn.addEventListener('click', () => TRExport.quickDownload());
+        if (directBtn) directBtn.addEventListener('click', () => {
+            TRExport.download();
+        });
     });
 }
 if (typeof module !== 'undefined' && module.exports) module.exports = TRExport;

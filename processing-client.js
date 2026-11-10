@@ -72,8 +72,10 @@ const Processing = {
         return new Promise((resolve, reject) => {
             let worker;
             let cancelled = false;
+            let job = null;
             const finish = (error, result) => {
-                if (worker && this.jobs.get(kind)?.worker !== worker) return;
+                // Impedir que un fallback antiguo destruya una nueva carga del mismo tipo.
+                if (this.jobs.get(kind) !== job) return;
                 this.jobs.delete(kind);
                 if (worker) worker.terminate();
                 error ? reject(error) : resolve(result);
@@ -85,8 +87,9 @@ const Processing = {
             };
 
             try {
-                worker = new Worker('processing-worker.js?v=2.6');
-                this.jobs.set(kind, { worker, cancel });
+                worker = new Worker('processing-worker.js?v=3.1');
+                job = { worker, cancel };
+                this.jobs.set(kind, job);
                 worker.onmessage = ({ data }) => {
                     if (data.event === 'progress') onProgress(data.message);
                     else if (data.event === 'done') finish(null, data.result);
@@ -102,7 +105,8 @@ const Processing = {
                 try { worker.postMessage({ kind, files }); } catch(error) { finish(error); }
             } catch {
                 // If Worker construction throws (e.g. file:/// sandbox)
-                this.jobs.set(kind, { worker: null, cancel });
+                job = { worker: null, cancel };
+                this.jobs.set(kind, job);
                 this.runFallback(kind, files, onProgress, () => cancelled)
                     .then(res => finish(null, res))
                     .catch(err => finish(err));

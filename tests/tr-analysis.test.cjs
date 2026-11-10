@@ -20,8 +20,10 @@ if (process.argv.length > 3) {
     const datasets = process.argv.slice(2).map(path => parser.parse(parser.decode(fs.readFileSync(path)).text, 'muestra'));
     const real = tr.build(datasets);
     assert.equal(real.paired, true);
-    assert.equal(real.people.reduce((n,p) => n+p.TR5.length+p.TR6.length,0), 243);
-    console.log(`Muestras reales: ${real.people.length} identidades, 243 registros conservados, ${real.people.filter(p=>p.status==='En ambos').length} en ambos reportes.`);
+    const sourceCount = datasets.reduce((n,d)=>n+d.records.length,0);
+    assert.equal(real.people.reduce((n,p)=>n+p.TR5.length+p.TR6.length,0), sourceCount,
+        'El cruce no debe perder ni duplicar filas originales');
+    console.log(`Muestras reales: ${real.people.length} identidades, ${sourceCount} registros conservados, ${real.people.filter(p=>p.status==='En ambos').length} en ambos reportes.`);
 }
 // Pruebas de compatibilidad con variaciones en nombres de columnas de documentos
 const c = parser.parse(`TR5: reporte\nNRO DE RUC: 20123456789\nTipo de Documento|Número de Documento|Apellido paterno|Apellido materno|Nombres\n01|45678901|Gomez|Luna|Carlos`, 'TR5_var1.txt');

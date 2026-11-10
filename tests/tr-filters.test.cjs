@@ -27,9 +27,12 @@ assert.equal(tr.sheets(analysis,matched,{}).find(s=>s.name==='TR5 Original').row
 if(process.argv[2]){
  const dataset=parser.parse(parser.decode(fs.readFileSync(process.argv[2])).text,'muestra');
  const actual=tr.build([dataset]);
- const col=dataset.columns.find(c=>tr.key(c.rawHeader||'')==='FEC. INICIO').index;
+ const target=dataset.columns.find(c=>tr.key(c.rawHeader||'')==='FEC INICIO');
+ assert.ok(target, 'La muestra TR5 requiere columna FEC. INICIO');
+ const col=target.index;
  const found=actual.people.filter(p=>filters.matches(p,[rule(col,'between','0001-01-01','9999-12-31')],tr.date));
- assert.equal(found.length,121);
- console.log('Muestra TR5: 121 trabajadores coinciden con intervalo completo; registros conservados.');
+ const validPeople=actual.people.filter(p=>p.TR5.some(x=>tr.date(x.record.rawCells[col]).iso));
+ assert.equal(found.length,validPeople.length,'El filtro por fechas incluye todas las identidades con fecha válida');
+ console.log(`Muestra TR5: ${found.length} trabajadores coinciden con fechas válidas; ${dataset.records.length} filas originales conservadas.`);
 }
 console.log('OK: texto, tildes, fechas inclusivas, vacíos, misma fila, cruce, columnas nuevas y exportación filtrada.');

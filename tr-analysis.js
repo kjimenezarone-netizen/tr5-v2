@@ -20,7 +20,7 @@ const TRAnalysis = {
                 ['Filtro de trabajadores',context.filter],
                 ['Trabajadores',people.length],
                 ['Registros',items.length],
-                ['Nota','El alcance filtrado aplica a la vista de trabajadores e incluye todas sus filas TR5/TR6. Las tablas de registros tienen filtros independientes.']
+                ['Nota','Los filtros del cruce seleccionan trabajadores; se exportan todas sus filas TR5/TR6 sin eliminar columnas. La búsqueda de registros originales es independiente y no afecta este Excel.']
             ] },
             { name: 'Trabajadores', rows: [
                 ['Tipo documento','Número','Nombres registrados','TR5','TR6','Multiplicidad','Presencia','Diferencias de identidad'],
@@ -213,6 +213,16 @@ const TRView = {
     analysis: null, page: 0, selected: new Set(), filtered: [], current: null, activeQuickFilter: 'all',
     reset() {
         this.analysis = null; this.page = 0; this.selected.clear(); this.filtered = []; this.current = null; this.activeQuickFilter = 'all';
+        document.getElementById('tr-person-search').value = '';
+        document.getElementById('tr-person-filter').value = 'all';
+        for (const [id, value] of [['tr-worker-field','all'],['tr-worker-type',''],['tr-worker-occupation','']]) {
+            const element = document.getElementById(id);
+            if (element) { element.replaceChildren(); element.value = value; }
+        }
+        const status = document.getElementById('tr-cross-filter-summary');
+        if (status) status.textContent = 'Seleccione un reporte para consultar trabajadores.';
+        const filteredButton = document.getElementById('tr-export-current-filter');
+        if (filteredButton) filteredButton.disabled = true;
         TRFilterUI.reset(); TRExport.invalidate();
         document.getElementById('tr-diagnostic-preview').replaceChildren();
         document.getElementById('tr-people').classList.add('hidden');
@@ -221,15 +231,57 @@ const TRView = {
     set(analysis) {
         this.analysis = analysis; this.page = 0; this.activeQuickFilter = 'all';
         TRFilterUI.set(analysis);
+        this.configureWorkerFilters(analysis);
         document.getElementById('tr-people').classList.remove('hidden');
         this.updateQuickFindings();
+        this.render();
+    },
+    configureWorkerFilters(analysis) {
+        const fill = (id, options, defaultValue) => {
+            const select = document.getElementById(id);
+            if (!select) return;
+            select.replaceChildren(...options.map(({value, label}) => {
+                const option = document.createElement('option');
+                option.value = value;
+                option.textContent = label;
+                return option;
+            }));
+            select.value = defaultValue;
+        };
+        fill('tr-worker-field', TRFilters.searchableFields(analysis), 'all');
+        fill('tr-worker-type', [{value:'',label:'Todos los tipos'},
+            ...TRFilters.documentTypes(analysis).map(value => ({value,label:value}))], '');
+        const occupations = TRFilters.occupations(analysis);
+        fill('tr-worker-occupation', [{value:'',label:occupations.length ? 'Todas las ocupaciones' : 'Sin ocupación en los reportes'},
+            ...occupations.map(value => ({value,label:value}))], '');
+        const occupationFilter = document.getElementById('tr-worker-occupation');
+        if (occupationFilter) occupationFilter.disabled = !occupations.length;
+    },
+    hasActiveWorkerFilters() {
+        const read = id => document.getElementById(id)?.value || '';
+        return Boolean(read('tr-person-search').trim() || read('tr-worker-type') || read('tr-worker-occupation')
+            || read('tr-person-filter') !== 'all' || this.activeQuickFilter !== 'all'
+            || TRFilterUI.rules.length);
+    },
+    clearWorkerFilters() {
+        if (!this.analysis) return;
+        for (const [id, value] of [['tr-person-search',''], ['tr-worker-field','all'],
+            ['tr-worker-type',''], ['tr-worker-occupation',''], ['tr-person-filter','all']]) {
+            const element = document.getElementById(id);
+            if (element) element.value = value;
+        }
+        this.activeQuickFilter = 'all';
+        TRFilterUI.rules = [];
+        TRFilterUI.draw();
+        TRExport.invalidate();
+        this.page = 0;
         this.render();
     },
     updateQuickFindings() {
         if (!this.analysis) return;
         const people = this.analysis.people;
         const total = people.length;
-        const multiple = people.filter(p => p.hasMultipleTR5).length;
+        const multiple = people.filter(p => p.hasMultipleTR5 || p.TR6.length > 1).length;
         const hasTR6 = people.some(p => p.TR6.length > 0);
         const noCuspp = hasTR6 ? people.filter(p => p.TR6.length > 0 && !p.hasCuspp).length : 0;
         const noSctr = hasTR6 ? people.filter(p => p.TR6.length > 0 && !p.hasSctr).length : 0;
@@ -240,27 +292,34 @@ const TRView = {
         };
         setVal('qf-total', total);
         setVal('qf-multiple', multiple);
-        setVal('qf-no-cuspp', noCuspp);
-        setVal('qf-no-sctr', noSctr);
+        setVal('qf-no-cuspp', hasTR6 ? noCuspp : '—');
+        setVal('qf-no-sctr', hasTR6 ? noSctr : '—');
+        document.querySelectorAll('.quick-finding-card[data-filter="no_cuspp"], .quick-finding-card[data-filter="no_sctr"]').forEach(btn => {
+            btn.disabled = !hasTR6;
+            btn.title = hasTR6 ? 'Buscar registros que requieren revisión en TR6' : 'No aplica: cargue un reporte TR6 para evaluar esta condición';
+        });
 
         // Highlight active button
         document.querySelectorAll('.quick-finding-card').forEach(btn => {
             const f = btn.getAttribute('data-filter');
-            if (f === this.activeQuickFilter) btn.classList.add('active');
+            if (f === this.activeQuickFilter && (this.activeQuickFilter !== 'all' || document.getElementById('tr-person-filter').value === 'all')) btn.classList.add('active');
             else btn.classList.remove('active');
         });
     },
     render() {
         if (!this.analysis) return;
         const el = id => document.getElementById(id);
-        const query = TRAnalysis.key(el('tr-person-search').value);
-        const filter = el('tr-person-filter').value;
-        this.activeQuickFilter = filter;
+        const query = el('tr-person-search').value;
+        const field = el('tr-worker-field').value;
+        const documentType = el('tr-worker-type').value;
+        const occupation = el('tr-worker-occupation').value;
+        // Los accesos rápidos complementan al selector de estado, sin duplicarlo.
+        const filter = this.activeQuickFilter !== 'all' ? this.activeQuickFilter : el('tr-person-filter').value;
         this.updateQuickFindings();
 
         const people = this.analysis.people.filter(p => {
             if (!TRFilters.matches(p, TRFilterUI.rules, TRAnalysis.date)) return false;
-            if (query && !TRAnalysis.key([p.type, p.number, ...p.names].join(' ')).includes(query)) return false;
+            if (!TRFilters.matchesWorker(p,{query,field,documentType,occupation})) return false;
             if (filter === 'all') return true;
             if (filter === 'selected') return this.selected.has(p.id);
             if (filter === 'differences') return p.identityDifference;
@@ -271,6 +330,14 @@ const TRView = {
         });
 
         this.filtered = people;
+        const hasFilter = this.hasActiveWorkerFilters();
+        const originalMatches = people.reduce((count, person) => count + person.TR5.length + person.TR6.length, 0);
+        const summary = el('tr-cross-filter-summary');
+        if (summary) summary.textContent = hasFilter
+            ? `${people.length} de ${this.analysis.people.length} trabajadores encontrados · ${originalMatches} registros TR5/TR6 asociados. El Excel filtrado conservará todas sus filas.`
+            : `${this.analysis.people.length} trabajadores disponibles. Combine apellido, tipo documental, ocupación y otros campos para filtrar.`;
+        const exportButton = el('tr-export-current-filter');
+        if (exportButton) exportButton.disabled = !hasFilter || !people.length;
         el('tr-selection-count').textContent = `${this.selected.size} trabajadores seleccionados (todas sus filas TR5/TR6)`;
         this.page = Math.max(0, Math.min(this.page, Math.ceil(people.length / 50) - 1));
         el('tr-person-summary').textContent = `${this.analysis.people.length} identidades · ${people.length} visibles · ${this.analysis.datasets.reduce((n,d) => n + d.records.length, 0)} registros originales · ${this.analysis.paired ? 'Cruce validado por RUC' : 'Un reporte'}`;
@@ -322,8 +389,8 @@ const TRView = {
             if (person.TR5.length > 1) {
                 const badge = document.createElement('span');
                 badge.className = 'badge-reingreso';
-                badge.textContent = `🔁 ${person.TR5.length} contratos`;
-                badge.title = 'Este trabajador tiene múltiples registros o reingresos en TR5';
+                badge.textContent = `🔁 ${person.TR5.length} filas TR5`;
+                badge.title = 'Hay varias filas TR5; no confirman por sí solas un reingreso';
                 tdTR5.appendChild(badge);
             } else if (person.TR5.length === 1) {
                 tdTR5.innerHTML = `<span class="text-gray-700 font-medium">1</span>`;
@@ -336,7 +403,7 @@ const TRView = {
             const tdTR6 = document.createElement('td');
             if (person.TR6.length > 0) {
                 let sctrBadge = '';
-                if (person.hasCuspp === false) sctrBadge += ' <span title="Sin CUSPP" class="text-xs text-orange-600 font-bold">⚠️ Sin CUSPP</span>';
+                if (person.hasCuspp === false) sctrBadge += ' <span title="Sin CUSPP" class="text-xs text-orange-600 font-bold">⚠️ CUSPP no registrado</span>';
                 tdTR6.innerHTML = `<span class="text-gray-700">${person.TR6.length}</span>${sctrBadge}`;
             } else {
                 tdTR6.innerHTML = `<span class="text-gray-400 italic">0</span>`;
@@ -353,10 +420,10 @@ const TRView = {
             // Col 8: Observaciones
             const tdObs = document.createElement('td');
             const obs = [];
-            if (person.hasMultipleTR5) obs.push('<span class="text-amber-700 font-medium text-xs">Reingresos / Sucesión</span>');
+            if (person.hasMultipleTR5) obs.push('<span class="text-amber-700 font-medium text-xs">Múltiples registros TR5</span>');
             if (person.identityDifference) obs.push('<span class="text-blue-700 text-xs">Diferencia nombres</span>');
-            if (person.hasCuspp === false) obs.push('<span class="text-orange-700 text-xs">Sin CUSPP</span>');
-            if (person.hasSctr === false) obs.push('<span class="text-red-700 text-xs">Sin SCTR</span>');
+            if (person.hasCuspp === false) obs.push('<span class="text-orange-700 text-xs">CUSPP no registrado</span>');
+            if (person.hasSctr === false) obs.push('<span class="text-red-700 text-xs">SCTR salud sin marca (verificar)</span>');
             tdObs.innerHTML = obs.join(' · ') || '<span class="text-gray-400">-</span>';
             row.appendChild(tdObs);
 
@@ -384,6 +451,7 @@ const TRView = {
         TRExport.invalidate();
         const container = document.getElementById('tr-person-detail');
         container.replaceChildren();
+        const safe = value => Utils.escapeHTML(value ?? '');
 
         // Encabezado Ficha
         const cardHeader = document.createElement('div');
@@ -391,16 +459,16 @@ const TRView = {
         
         const infoDiv = document.createElement('div');
         const badgeRep = person.hasMultipleTR5 
-            ? `<span class="bg-amber-400/20 text-amber-300 border border-amber-400/30 text-xs font-bold px-2.5 py-1 rounded-full ml-3">🔁 ${person.TR5.length} Contratos / Reingresos</span>`
-            : `<span class="bg-green-400/20 text-green-300 border border-green-400/30 text-xs font-bold px-2.5 py-1 rounded-full ml-3">✅ Contrato único</span>`;
+            ? `<span class="bg-amber-400/20 text-amber-300 border border-amber-400/30 text-xs font-bold px-2.5 py-1 rounded-full ml-3">🔁 ${person.TR5.length} registros TR5</span>`
+            : `<span class="bg-green-400/20 text-green-300 border border-green-400/30 text-xs font-bold px-2.5 py-1 rounded-full ml-3">1 registro TR5</span>`;
         
         infoDiv.innerHTML = `
             <div class="flex items-center flex-wrap gap-2">
-                <span class="text-xs font-mono uppercase tracking-widest text-blue-200">${person.type} ${person.number}</span>
+                <span class="text-xs font-mono uppercase tracking-widest text-blue-200">${safe(person.type)} ${safe(person.number)}</span>
                 ${badgeRep}
             </div>
-            <h3 class="text-xl font-bold text-white mt-1">${[...person.names].join(' / ')}</h3>
-            <p class="text-xs text-blue-200/80 mt-0.5">Estado en reportes: <strong>${person.status}</strong> · ${person.TR5.length} registros TR5, ${person.TR6.length} registros TR6</p>
+            <h3 class="text-xl font-bold text-white mt-1">${safe([...person.names].join(' / '))}</h3>
+            <p class="text-xs text-blue-200/80 mt-0.5">Estado en reportes: <strong>${safe(person.status)}</strong> · ${person.TR5.length} registros TR5, ${person.TR6.length} registros TR6</p>
         `;
         cardHeader.appendChild(infoDiv);
 
@@ -428,12 +496,12 @@ const TRView = {
                 <div class="flex items-start gap-3 p-4 bg-amber-50 border border-amber-200 rounded-xl mb-6">
                     <span class="text-2xl">⚠️</span>
                     <div>
-                        <h4 class="text-amber-900 font-bold text-sm">Alerta Inspectiva: Trabajador con ${person.TR5.length} contratos / reingresos</h4>
-                        <p class="text-amber-800 text-xs mt-1">Este trabajador figura en varias filas de TR5 con distintas fechas o condiciones. Verifique si hubo continuidad laboral encubierta (desnaturalización de contratos modales) o si existió liquidación de beneficios sociales entre cada periodo.</p>
+                        <h4 class="text-amber-900 font-bold text-sm">Indicador de revisión: ${person.TR5.length} registros TR5</h4>
+                        <p class="text-amber-800 text-xs mt-1">Existen varias filas de TR5 para el mismo documento. No constituyen por sí solas prueba de reingreso, continuidad ni incumplimiento; contraste las fechas y condiciones con los documentos laborales.</p>
                     </div>
                 </div>
                 <h4 class="font-bold text-gray-900 text-base mb-4 flex items-center gap-2">
-                    <span>Línea de Tiempo de Contrataciones (Cronológico)</span>
+                    <span>Cronología de filas TR5 (por fecha informada)</span>
                     <span class="text-xs font-normal text-gray-500">(${history.dates.length} fechas distintas)</span>
                 </h4>
             `;
@@ -451,23 +519,23 @@ const TRView = {
                     <div class="bg-gray-50 hover:bg-white p-4 rounded-xl border border-gray-200 shadow-xs transition-all">
                         <div class="flex flex-wrap items-center justify-between gap-2 border-b pb-2 mb-2">
                             <div class="flex items-center gap-2">
-                                <span class="text-xs font-bold text-blue-900 bg-blue-100 px-2 py-0.5 rounded">Inicio: ${item.start || 'No indicada'}</span>
+                                <span class="text-xs font-bold text-blue-900 bg-blue-100 px-2 py-0.5 rounded">Inicio: ${safe(item.start || 'No indicada')}</span>
                                 <span class="text-xs text-gray-400 font-mono">Fila ${item.record.sourceRow}</span>
                             </div>
-                            <span class="text-xs text-gray-500">${item.dataset.sourceFile}</span>
+                            <span class="text-xs text-gray-500">${safe(item.dataset.sourceFile)}</span>
                         </div>
                         <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
                             <div>
                                 <span class="text-gray-400 block">Tipo de Contrato</span>
-                                <strong class="text-gray-800">${item.contract || 'No registrado'}</strong>
+                                <strong class="text-gray-800">${safe(item.contract || 'No registrado')}</strong>
                             </div>
                             <div>
                                 <span class="text-gray-400 block">Ocupación / Puesto</span>
-                                <strong class="text-gray-800">${item.occupation || 'No registrado'}</strong>
+                                <strong class="text-gray-800">${safe(item.occupation || 'No registrado')}</strong>
                             </div>
                             <div>
                                 <span class="text-gray-400 block">Establecimiento</span>
-                                <strong class="text-gray-800">${item.establishment || 'No registrado'}</strong>
+                                <strong class="text-gray-800">${safe(item.establishment || 'No registrado')}</strong>
                             </div>
                         </div>
                     </div>
@@ -484,24 +552,24 @@ const TRView = {
             singleSection.innerHTML = `
                 <h4 class="font-bold text-gray-900 text-base mb-3 flex items-center gap-2">
                     <span>Datos de la Relación Laboral (TR5)</span>
-                    <span class="text-xs font-bold text-green-700 bg-green-50 border border-green-200 px-2.5 py-0.5 rounded-full">Contrato Único</span>
+                    <span class="text-xs font-bold text-green-700 bg-green-50 border border-green-200 px-2.5 py-0.5 rounded-full">Un registro TR5</span>
                 </h4>
                 <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 p-4 bg-gray-50 rounded-xl text-xs">
                     <div>
                         <span class="text-gray-500 block mb-1">Fecha de Ingreso</span>
-                        <strong class="text-base text-blue-900 font-bold">${singleItem?.start || 'No indicada'}</strong>
+                        <strong class="text-base text-blue-900 font-bold">${safe(singleItem?.start || 'No indicada')}</strong>
                     </div>
                     <div>
                         <span class="text-gray-500 block mb-1">Tipo de Contrato</span>
-                        <strong class="text-gray-800">${singleItem?.contract || 'No registrado'}</strong>
+                        <strong class="text-gray-800">${safe(singleItem?.contract || 'No registrado')}</strong>
                     </div>
                     <div>
                         <span class="text-gray-500 block mb-1">Ocupación</span>
-                        <strong class="text-gray-800">${singleItem?.occupation || 'No registrado'}</strong>
+                        <strong class="text-gray-800">${safe(singleItem?.occupation || 'No registrado')}</strong>
                     </div>
                     <div>
                         <span class="text-gray-500 block mb-1">Establecimiento</span>
-                        <strong class="text-gray-800">${singleItem?.establishment || 'No registrado'}</strong>
+                        <strong class="text-gray-800">${safe(singleItem?.establishment || 'No registrado')}</strong>
                     </div>
                 </div>
             `;
@@ -516,29 +584,33 @@ const TRView = {
             const tr6RecordsHtml = person.TR6.map(item => {
                 const getCell = colName => {
                     const idx = item.dataset.columns.findIndex(c => TRAnalysis.key(c.rawHeader || '').includes(colName));
-                    return idx >= 0 ? (item.record.rawCells[idx] || '').trim() : '-';
+                    return idx >= 0 ? (item.record.rawCells[idx] || '').trim() : '';
                 };
+                // TR6 puede repetir el título "Tipo de Régimen" en salud y pensiones.
+                // Conservar posiciones en vez de tomar siempre la primera coincidencia.
+                const regimenColumns = item.dataset.columns.filter(c => TRAnalysis.key(c.rawHeader || '').includes('REGIMEN'));
+                const read = column => column ? (item.record.rawCells[column.index] || '').trim() : '';
                 const cuspp = getCell('CUSPP');
-                const regimenSalud = getCell('REGIMEN') || getCell('SALUD');
-                const regimenPension = getCell('PENSION') || getCell('SISTEMA');
+                const regimenSalud = read(regimenColumns[0]) || getCell('SALUD');
+                const regimenPension = read(regimenColumns[1]) || getCell('PENSION');
 
                 return `
                     <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 p-4 bg-blue-50/50 rounded-xl text-xs border border-blue-100 mb-2">
                         <div>
                             <span class="text-gray-500 block mb-1">Aseguramiento de Salud</span>
-                            <strong class="text-gray-800">${regimenSalud || 'ESSALUD'}</strong>
+                            <strong class="text-gray-800">${safe(regimenSalud || 'No registrado')}</strong>
                         </div>
                         <div>
                             <span class="text-gray-500 block mb-1">Régimen Pensionario</span>
-                            <strong class="text-gray-800">${regimenPension || 'No registrado'}</strong>
+                            <strong class="text-gray-800">${safe(regimenPension || 'No registrado')}</strong>
                         </div>
                         <div>
                             <span class="text-gray-500 block mb-1">Código CUSPP</span>
-                            <strong class="${cuspp ? 'text-gray-900 font-mono' : 'text-orange-600 font-bold'}">${cuspp || '⚠️ Sin CUSPP'}</strong>
+                            <strong class="${cuspp ? 'text-gray-900 font-mono' : 'text-orange-600 font-bold'}">${safe(cuspp || '⚠️ Sin CUSPP identificado')}</strong>
                         </div>
                         <div>
-                            <span class="text-gray-500 block mb-1">Cobertura SCTR</span>
-                            <strong class="${person.hasSctr ? 'text-green-700' : 'text-red-700'}">${person.hasSctr ? '✅ SCTR Activo' : '🛡️ Sin SCTR detectado'}</strong>
+                            <span class="text-gray-500 block mb-1">SCTR salud (indicador)</span>
+                            <strong class="${person.hasSctr ? 'text-green-700' : 'text-red-700'}">${person.hasSctr ? 'SCTR salud marcado en TR6' : '🛡️ SCTR salud no detectado (verificar)'}</strong>
                         </div>
                     </div>
                 `;
@@ -565,7 +637,7 @@ const TRView = {
             person[type].forEach(({record, dataset}) => {
                 const box = document.createElement('div');
                 box.className = 'bg-white p-3 rounded-lg border border-gray-200';
-                box.innerHTML = `<span class="font-bold text-blue-900">${type} · ${dataset.sourceFile} (Fila ${record.sourceRow})</span>`;
+                box.innerHTML = `<span class="font-bold text-blue-900">${type} · ${safe(dataset.sourceFile)} (Fila ${record.sourceRow})</span>`;
                 const pre = document.createElement('pre');
                 pre.className = 'overflow-auto mt-1 p-2 bg-gray-100 rounded text-[11px] text-gray-800';
                 pre.textContent = record.rawLine;
@@ -581,13 +653,25 @@ const TRView = {
 };
 
 if (typeof document !== 'undefined') document.addEventListener('DOMContentLoaded', () => {
-    ['tr-person-search', 'tr-person-filter'].forEach(id => {
+    ['tr-person-search', 'tr-person-filter', 'tr-worker-field', 'tr-worker-type', 'tr-worker-occupation'].forEach(id => {
         const el = document.getElementById(id);
-        if (el) el.addEventListener(id.endsWith('search') ? 'input' : 'change', () => {
+        if (el) el.addEventListener(id === 'tr-person-search' ? 'input' : 'change', () => {
+            if (id === 'tr-person-filter') TRView.activeQuickFilter = 'all';
             TRExport.invalidate();
             TRView.page = 0;
             TRView.render();
         });
+    });
+    document.getElementById('tr-cross-filter-clear')?.addEventListener('click', () => TRView.clearWorkerFilters());
+    document.getElementById('tr-export-current-filter')?.addEventListener('click', () => {
+        if (!TRView.analysis || !TRView.hasActiveWorkerFilters() || !TRView.filtered.length) return;
+        const scope = document.getElementById('tr-export-scope');
+        const details = document.getElementById('tr-export-details');
+        if (details) details.open = true;
+        TRExport.syncScopeOptions();
+        scope.value = 'filtered';
+        TRExport.preview();
+        document.getElementById('tr-export-center')?.scrollIntoView({block:'start',behavior:'smooth'});
     });
     const selFilt = document.getElementById('tr-select-filtered');
     if (selFilt) selFilt.addEventListener('click', () => {
@@ -612,7 +696,9 @@ if (typeof document !== 'undefined') document.addEventListener('DOMContentLoaded
             const filterVal = btn.getAttribute('data-filter') || 'all';
             const selectEl = document.getElementById('tr-person-filter');
             if (selectEl) {
-                selectEl.value = filterVal;
+                selectEl.value = 'all';
+                TRView.activeQuickFilter = filterVal;
+                TRExport.invalidate();
                 TRView.page = 0;
                 TRView.render();
             }
