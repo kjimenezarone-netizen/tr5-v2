@@ -1,4 +1,5 @@
 const assert = require('node:assert/strict');
+const { test } = require('node:test');
 const parser = require('../file-parser.js');
 const fs = require('node:fs');
 
@@ -24,3 +25,25 @@ for (const path of process.argv.slice(2)) {
     console.log(`${dataset.type}: ${dataset.records.length} registros, ${dataset.columns.length} columnas, integridad verificada.`);
 }
 console.log('OK: vacíos, columnas adicionales, encabezados repetidos, ceros iniciales y rechazo de formato desconocido.');
+
+test('TR6 omite encabezados repetidos y conserva la fila física de cada registro', () => {
+    const groups = 'DATOS DE IDENTIDAD  |   REGIMEN DE SALUD';
+    const header = 'Tipo|Número|Apellido paterno|Nombres|EPS';
+    const first = '01|00000101|PRUEBA|ANA|X';
+    const second = '01|00000102|EJEMPLO|BEA|';
+    const dataset = parser.parse([
+        'TR6: reporte sintético', groups, header, first, groups,
+        '  tipo | numero | APELLIDO PATERNO | Nombres | EPS ', second
+    ].join('\r\n'), 'tr6.txt', { maxRows: 2 });
+    assert.deepEqual(dataset.records.map(row => row.sourceRow), [4, 7]);
+    assert.deepEqual(dataset.records.map(row => row.rawLine), [first, second]);
+    assert.deepEqual(dataset.diagnostics, []);
+});
+
+test('RUC omite la cabecera completa repetida y conserva los registros con celdas vacías', () => {
+    const dataset = parser.parse([
+        'RUC|Razón social', '20123456789|MUESTRA', ' ruc | RAZON SOCIAL ', '20987654321|'
+    ].join('\n'), 'ruc.txt', { maxRows: 2, maxCells: 4 });
+    assert.deepEqual(dataset.records.map(row => row.sourceRow), [2, 4]);
+    assert.deepEqual(dataset.records[1].rawCells, ['20987654321', '']);
+});

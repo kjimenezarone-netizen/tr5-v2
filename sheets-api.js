@@ -1,50 +1,62 @@
 const SheetsAPI = {
-    getBaseUrl() {
-        if (typeof window !== 'undefined' && window.SUNAFIL_DRIVE_API_URL) return window.SUNAFIL_DRIVE_API_URL;
-        if (typeof localStorage !== 'undefined') {
-            const stored = localStorage.getItem('sunafil_drive_api_url');
-            if (stored) return stored;
-        }
-        return AppState.DRIVE_API_URL;
-    },
+    eventSession: null,
+    pendingSession: null,
+    generation: 0,
     async request(payload) {
-        const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 20000);
-        const url = this.getBaseUrl();
-        try {
-            const response = await fetch(url, {
-                method: 'POST',
-                headers: { 'Content-Type': 'text/plain;charset=UTF-8' },
-                body: JSON.stringify(payload),
-                signal: controller.signal
-            });
-            if (!response.ok) throw new Error(`Servicio de estadísticas: HTTP ${response.status}`);
-            const text = await response.text();
-            try { return JSON.parse(text); }
-            catch { throw new Error('El servicio no devolvió JSON. Revise el acceso del despliegue de Apps Script y la cuenta institucional.'); }
-        } finally { clearTimeout(timeout); }
+        if (!ReaderConfig.apiUrl) throw new Error('El servicio de estadísticas no está configurado.');
+        const response = await fetch(ReaderConfig.apiUrl, {
+            method: 'POST',
+            credentials: ReaderConfig.withCredentials ? 'include' : 'same-origin',
+            headers: { 'Content-Type': 'text/plain;charset=UTF-8' },
+            body: JSON.stringify(payload),
+            signal: AbortSignal.timeout(20000)
+        });
+        if (!response.ok) throw new Error('El servicio de estadísticas no respondió correctamente.');
+        try { return await response.json(); }
+        catch { throw new Error('No se confirmó el acceso al servicio de estadísticas.'); }
+    },
+    async telemetryToken() {
+        if (this.eventSession?.expires > Date.now() + 5000) return this.eventSession.token;
+        if (!this.pendingSession) {
+            const generation = this.generation;
+            const pending = this.request({ accion: 'TELEMETRY_SESSION' }).then(data => {
+                if (generation !== this.generation || data.status !== 'ok' || !data.token) {
+                    throw new Error('La cuenta institucional no tiene acceso al registro de estadísticas.');
+                }
+                this.eventSession = data;
+                return data.token;
+            }).finally(() => { if (this.pendingSession === pending) this.pendingSession = null; });
+            this.pendingSession = pending;
+        }
+        return this.pendingSession;
+    },
+    reset() {
+        this.generation++;
+        this.eventSession = null;
+        this.pendingSession = null;
     },
     async event(action, metadata) {
-        if (!metadata || !metadata.intendencia) return;
+        if (!ReaderConfig.apiUrl || ReaderConfig.telemetryMode === 'OFF' || !metadata?.intendencia) return;
+        const generation = this.generation;
         const payload = {
             eventId: crypto.randomUUID(),
             intendencia: metadata.intendencia,
             modulo: metadata.modulo,
             accion: action,
-            registros: metadata.registros || 0,
-            archivos: metadata.archivos || 0,
-            duracionMs: Math.max(0, Math.round(metadata.duracionMs || 0)),
-            bytes: metadata.bytes || 0,
-            version: '2.0'
+            registros: metadata.registros ?? 0,
+            archivos: metadata.archivos ?? 0,
+            duracionMs: Math.max(0, Math.round(metadata.duracionMs ?? 0)),
+            bytes: metadata.bytes ?? 0,
+            version: ReaderConfig.version
         };
         try {
+            if (ReaderConfig.telemetryMode === 'INSTITUTIONAL') payload.token = await this.telemetryToken();
+            if (generation !== this.generation) return;
             const result = await this.request(payload);
-            if (result.status !== 'ok') throw new Error(`Sheets rechazó el evento (${result.status}).`);
-            AppState.dashboardCache = null;
-            AppState.dashboardCacheTime = 0;
-        } catch (error) {
-            Utils.showToast('La operación local terminó, pero no se confirmó su estadística en Sheets. Revise el acceso del servicio.', 'info');
-            console.warn('Estadísticas:', error.message);
+            if (result.status === 'unauthorized') this.eventSession = null;
+            if (result.status !== 'ok') throw new Error('El evento no se registró.');
+        } catch {
+            if (generation === this.generation) Utils.showToast('No se confirmó el registro de la estadística.', 'info');
         }
     }
 };

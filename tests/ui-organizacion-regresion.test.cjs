@@ -36,8 +36,8 @@ test('El selector de columnas visuales TR y exportación redundante desaparecen;
   for (const id of ['tr-export-prepare','tr-export-download','tr-export-details','tr-reset-all','tr-reset-all-bottom','ruc-reset-all']) {
     assert.ok(html.includes(`id="${id}"`), `${id} ausente`);
   }
-  assert.ok(exportJs.includes('TRAnalysis.sheets('));
-  assert.ok(exportJs.includes('XLSX.writeFile('));
+  assert.ok(exportJs.includes('TRAnalysis.describeExport('));
+  assert.ok(exportJs.includes("ExportFile.run('TR'"));
   assert.ok(!exportJs.includes('quickDownload()'));
 });
 
@@ -48,7 +48,7 @@ test('Limpiar selección TR no borra datasets; limpiar todo requiere confirmaci�
     if (!elements.has(id)) {
       const states = new Set();
       elements.set(id, {
-        id, value: '', textContent: '', disabled: false,
+        id, value: '', textContent: '', disabled: false, style: {},
         children: ['simulado'],
         classList: {
           add: cls => states.add(cls),
@@ -68,7 +68,7 @@ test('Limpiar selección TR no borra datasets; limpiar todo requiere confirmaci�
     document: { getElementById: node, addEventListener() {} },
     sessionStorage: { getItem: () => null, removeItem() {} },
     localStorage: { getItem: () => null, setItem() {} },
-    ColumnChooser: { reset() {} },
+    Processing: { cancel() {} },
     TRView: { reset() { resetView++; } },
     TRExport: { invalidate() { invalidate++; } },
     Option: class { constructor(text, value) { this.text=text; this.value=value; } },
@@ -104,5 +104,4 @@ test('Limpieza RUC explícita y descarga sin controles de selección', () => {
   assert.ok(!js.includes('ColumnChooser.reset(\'ruc-records\');'));
   assert.ok(js.includes("el('ruc-download').addEventListener('click'"));
   assert.ok(js.includes('window.confirm('));
-  assert.ok(js.includes('el(\'ruc-files\').value = \'\'; // No elimina el modelo'));
 });

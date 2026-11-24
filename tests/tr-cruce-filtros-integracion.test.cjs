@@ -87,25 +87,25 @@ test('Filtros de interfaz ubicados dentro del cruce, sin duplicarse en originale
   assert.ok(html.includes('id="tr-scope-filtered"'));
   const js = fs.readFileSync(path.join(__dirname,'../tr-export.js'),'utf8');
   assert.ok(js.includes("hasWorkerOccupation") && js.includes("hasWorkerType"));
-  assert.ok(js.includes('TRAnalysis.sheets('));
+  assert.ok(js.includes('TRAnalysis.describeExport('));
 });
 
-test('Muestras aportadas: filtro combinado por apellido, DNI y oficio conserva la multiplicidad', () => {
+test('Muestras sintéticas: filtro combinado por apellido, DNI y oficio conserva la multiplicidad', () => {
   const base=path.join(__dirname,'../muestras');
-  const real5=parser.parse(parser.decode(fs.readFileSync(path.join(base,'muestra_TR5_ACELIM.txt'))).text,'muestra_TR5');
-  const real6=parser.parse(parser.decode(fs.readFileSync(path.join(base,'muestra_TR6_ACELIM.txt'))).text,'muestra_TR6');
+  const real5=parser.parse(parser.decode(fs.readFileSync(path.join(base,'TR5_sintetico.txt'))).text,'muestra_TR5');
+  const real6=parser.parse(parser.decode(fs.readFileSync(path.join(base,'TR6_sintetico.txt'))).text,'muestra_TR6');
   const real=tr.build([real5,real6]);
-  assert.ok(filters.occupations(real).includes('PEON AGRICOLA'));
+  assert.ok(filters.occupations(real).includes('PEÓN AGRÍCOLA'));
   assert.ok(filters.documentTypes(real).includes('L.E / DNI'));
   const workers=real.people.filter(p=>filters.matchesWorker(p,{
-    query:'ALAMA',field:'surname',documentType:'L.E / DNI',occupation:'PEON AGRICOLA'
+    query:'EJEMPLO',field:'surname',documentType:'L.E / DNI',occupation:'PEÓN AGRÍCOLA'
   }));
   assert.equal(workers.length,1);
   assert.equal(workers[0].TR5.length,2);
   assert.equal(workers[0].TR6.length,1);
-  const pages=tr.sheets(real,workers,{intendencia:'PRUEBA',scope:'filtrado',query:'ALAMA',filter:'PEON AGRICOLA'});
+  const pages=tr.sheets(real,workers,{intendencia:'PRUEBA',scope:'filtrado',query:'EJEMPLO',filter:'PEÓN AGRÍCOLA'});
   assert.equal(pages.find(s=>s.name==='TR5 Original').rows.length,3);
   assert.equal(pages.find(s=>s.name==='TR6 Original').rows.length,2);
   assert.equal(real5.records.length,6);
-  assert.equal(real6.records.length,121);
+  assert.equal(real6.records.length,4);
 });

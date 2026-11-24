@@ -1,13 +1,14 @@
 /* Diagnóstico técnico con lista cerrada de campos: nunca copiar valores o nombres de fuentes. */
 const Diagnostics = {
-    build(datasets, moduleName, rejectedSources = 0) {
+    build(datasets, moduleName, rejectedSources = 0, schemaIssues = []) {
         return {
-            diagnosticVersion: '1.0', parserVersion: '2.1', module: moduleName,
+            diagnosticVersion: '1.1', parserVersion: typeof ReaderConfig === 'undefined' ? null : ReaderConfig.version, module: moduleName,
             generatedAt: new Date().toISOString(),
             processedSources: datasets.length, rejectedSources,
             processedRecords: datasets.reduce((n,d) => n+d.records.length,0),
             problematicRows: datasets.reduce((n,d) => n+d.diagnostics.length,0),
             discardedRecords: 0,
+            schemaIssues: schemaIssues.map(({ type, code }) => ({ type, code })),
             limitation: 'Los conteos describen únicamente fuentes procesadas. Las fuentes rechazadas no se contabilizan como registros. No evalúa infracciones ni certifica validez semántica.',
             sources: datasets.map((dataset,index) => {
                 const columns = dataset.columns.map(column => {
@@ -51,6 +52,6 @@ if(typeof document!=='undefined')document.addEventListener('DOMContentLoaded',()
     document.getElementById('tr-diagnostic-prepare').addEventListener('click',()=>{
         if(!UI.requireIntendencia() || AppState.trBusy) return;
         if(!AppState.trDatasets.length)return Utils.showToast('Cargue primero un reporte TR.','info');
-        Diagnostics.preview('tr-diagnostic-preview',Diagnostics.build(AppState.trDatasets,'TR'));
+        Diagnostics.preview('tr-diagnostic-preview', Diagnostics.build(AppState.trDatasets, 'TR', 0, TRView.analysis.schemaIssues));
     });
 });

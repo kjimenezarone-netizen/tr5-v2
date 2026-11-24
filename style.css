@@ -1,3 +1,11 @@
+@font-face {
+    font-family: 'Open Sans';
+    src: url('./open-sans-latin.woff2') format('woff2');
+    font-style: normal;
+    font-weight: 300 800;
+    font-display: swap;
+}
+
 :root {
     --sunafil-blue: #003366;
     --sunafil-red: #d90000;

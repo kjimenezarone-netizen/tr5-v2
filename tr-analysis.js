@@ -1,3 +1,5 @@
+const TRSchema = typeof module !== 'undefined' && module.exports ? require('./report-schema.js') : ReportSchema;
+
 const TRAnalysis = {
     scope(analysis, scope, selected, filtered, current) {
         if (scope === 'all') return analysis.people.slice();
@@ -5,6 +7,34 @@ const TRAnalysis = {
         if (scope === 'selected') return analysis.people.filter(p => selected.has(p.id));
         if (scope === 'individual') return analysis.people.filter(p => p.id === current);
         throw new Error('Alcance desconocido.');
+    },
+    workerHeader: ['Tipo documento', 'Número', 'Nombres registrados', 'TR5', 'TR6', 'Multiplicidad', 'Presencia', 'Diferencias de identidad'],
+    workerRow(p) {
+        const tr5 = p.TR5.length, tr6 = p.TR6.length;
+        let multi = 'Registro único';
+        if (tr5 > 1 && tr6 > 1) {
+            multi = `Aparece varias veces en el documento (${tr5} en TR5, ${tr6} en TR6)`;
+        } else if (tr5 > 1) {
+            multi = `Aparece varias veces en el documento (${tr5} en TR5)`;
+        } else if (tr6 > 1) {
+            multi = `Aparece varias veces en el documento (${tr6} en TR6)`;
+        }
+        return [p.type, p.number, [...p.names].join(' / '), tr5, tr6, multi, p.status, p.identityDifference ? 'Sí' : 'No'];
+    },
+    describeExport(analysis, people) {
+        const rows = { TR5: 0, TR6: 0 };
+        for (const person of people) {
+            rows.TR5 += person.TR5.length;
+            rows.TR6 += person.TR6.length;
+        }
+        const records = rows.TR5 + rows.TR6;
+        return { records, sheets: [
+            { name: 'Resumen', rows: 9 + (analysis.schemaIssues?.length ?? 0), columns: 2 },
+            { name: 'Trabajadores', rows: people.length, columns: this.workerHeader.length },
+            { name: 'Historico laboral', rows: rows.TR5, columns: 9 },
+            ...analysis.datasets.map(dataset => ({ name: dataset.type + ' Original', rows: rows[dataset.type], columns: dataset.columns.length })),
+            { name: 'Fuentes', rows: records, columns: 4 }
+        ] };
     },
     sheets(analysis, people, context) {
         const items = people.flatMap(p => [...p.TR5, ...p.TR6]);
@@ -20,33 +50,28 @@ const TRAnalysis = {
                 ['Filtro de trabajadores',context.filter],
                 ['Trabajadores',people.length],
                 ['Registros',items.length],
-                ['Nota','Los filtros del cruce seleccionan trabajadores; se exportan todas sus filas TR5/TR6 sin eliminar columnas. La búsqueda de registros originales es independiente y no afecta este Excel.']
+                ['Nota','Los filtros del cruce seleccionan trabajadores; se exportan todas sus filas TR5/TR6 sin eliminar columnas. La búsqueda de registros originales es independiente y no afecta este Excel.'],
+                ...(analysis.schemaIssues ?? []).map(issue => ['Observación de esquema', issue.message])
             ] },
             { name: 'Trabajadores', rows: [
-                ['Tipo documento','Número','Nombres registrados','TR5','TR6','Multiplicidad','Presencia','Diferencias de identidad'],
-                ...people.map(p => {
-                    const tr5 = p.TR5.length, tr6 = p.TR6.length;
-                    let multi = 'Registro único';
-                    if (tr5 > 1 && tr6 > 1) {
-                        multi = `Aparece varias veces en el documento (${tr5} en TR5, ${tr6} en TR6)`;
-                    } else if (tr5 > 1) {
-                        multi = `Aparece varias veces en el documento (${tr5} en TR5)`;
-                    } else if (tr6 > 1) {
-                        multi = `Aparece varias veces en el documento (${tr6} en TR6)`;
-                    }
-                    return [p.type, p.number, [...p.names].join(' / '), tr5, tr6, multi, p.status, p.identityDifference ? 'Sí' : 'No'];
-                })
+                this.workerHeader,
+                ...people.map(person => this.workerRow(person))
             ] },
             { name: 'Historico laboral', rows: [['Tipo documento','Número','Ingreso original','Ingreso interpretado','Establecimiento original','Contrato original','Diagnóstico','Archivo','Fila'], ...people.flatMap(p => this.history(p).rows.map(r => [p.type,p.number,r.start ?? '',r.iso ?? '',r.establishment ?? '',r.contract ?? '',[r.diagnostic,r.establishmentStatus,r.contractStatus].filter(Boolean).join(' / '),r.dataset.sourceFile,r.record.sourceRow]))] }
         ];
+        const included = new Set(items.map(item => item.record));
         sources.forEach(dataset => {
-            const included = new Set(items.filter(i => i.dataset === dataset).map(i => i.record));
             sheets.push({name:`${dataset.type} Original`,rows:[dataset.columns.map(c=>c.rawHeader ?? c.label),...dataset.records.filter(r=>included.has(r)).map(r=>r.rawCells.slice())]});
         });
         sheets.push({name:'Fuentes',rows:[['Reporte','Archivo','Fila','Línea original'],...items.map(i=>[i.dataset.type,i.dataset.sourceFile,i.record.sourceRow,i.record.rawLine])]});
         return sheets;
     },
-    key(value) { return (value || '').trim().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/N[^\w\s]?MERO/gi, 'NUMERO').replace(/[^A-Z0-9\s]/gi, '').toUpperCase(); },
+    key: TRSchema.key,
+    schemas: new WeakMap(),
+    schema(dataset) {
+        if (!this.schemas.has(dataset)) this.schemas.set(dataset, TRSchema.describe(dataset));
+        return this.schemas.get(dataset);
+    },
     date(value) {
         const text = (value ?? '').trim();
         if (!text) return { iso: null, status: 'Fecha vacía' };
@@ -61,16 +86,11 @@ const TRAnalysis = {
     },
     history(person) {
         const rows = person.TR5.map(({record, dataset}, order) => {
-            const read = aliases => {
-                const normAliases = aliases.map(a => this.key(a));
-                const columns = dataset.columns.filter(c => normAliases.includes(this.key(c.rawHeader || '')));
-                return columns.length === 1 ? { value: record.rawCells[columns[0].index] ?? null, status: '' }
-                    : { value: null, status: columns.length ? 'Columna ambigua' : 'Campo ausente' };
-            };
-            const start = read(['FEC. INICIO', 'FECHA DE INGRESO', 'FECHA INGRESO']);
-            const establishment = read(['ESTABLECIMIENTO EN EL QUE LABORA', 'ESTABLECIMIENTO']);
-            const contract = read(['TIPO DE CONTRATO', 'CONTRATO']);
-            const occupation = read(['OCUPACION', 'PUESTO', 'CARGO']);
+            const fields = this.schema(dataset);
+            const start = TRSchema.read(record, fields.start);
+            const establishment = TRSchema.read(record, fields.establishment);
+            const contract = TRSchema.read(record, fields.contract);
+            const occupation = TRSchema.read(record, fields.occupation);
             const date = this.date(start.value);
             return { record, dataset, order, start: start.value, iso: date.iso, diagnostic: start.status || date.status,
                 establishment: establishment.value, establishmentStatus: establishment.status,
@@ -85,134 +105,82 @@ const TRAnalysis = {
             occupations: distinct('occupation'), unresolvedDates: rows.filter(r => !r.iso).length };
     },
     ruc(dataset) {
-        const matches = dataset.text.split(/\r\n|\n|\r/).slice(0, dataset.headerRow - 1)
-            .filter(line => /^\s*(?:NRO\.?\s+DE\s+)?RUC\s*:/i.test(line))
-            .map(line => /:\s*(\d{11})\s*$/.exec(line)?.[1]).filter(Boolean);
-        return new Set(matches).size === 1 ? matches[0] : null;
+        const matches = dataset.prelude.filter(line => /^\s*(?:(?:NRO\.?|N[ÚU]MERO)\s+DE\s+)?RUC\s*:/i.test(line));
+        const values = matches.map(line => /:\s*(\d{11})\s*$/.exec(line)?.[1]);
+        return values.length && values.every(Boolean) && new Set(values).size === 1 ? values[0] : null;
     },
     companyName(dataset) {
-        if (!dataset || !dataset.text) return null;
-        const lines = dataset.text.split(/\r\n|\n|\r/);
-        const maxLines = dataset.headerRow ? Math.min(dataset.headerRow - 1, lines.length) : Math.min(lines.length, 35);
-        for (let i = 0; i < maxLines; i++) {
-            const line = lines[i];
-            if (/^[=-]{3,}/.test(line) || line.includes('|')) break;
-            const m = /(?:RAZ[OÓ]N\s+SOCIAL|DENOMINACI[OÓ]N|NOMBRE(?:\s*,\s*DENOMINACI[OÓ]N|\s+O\s+RAZ[OÓ]N)?)\s*:\s*([^:\r\n]+)/i.exec(line);
-            if (m && m[1].trim()) {
-                return m[1].trim().replace(/^["']|["']$/g, '').trim();
-            }
-        }
-        return null;
+        const info = TRSchema.companyInfo(dataset);
+        const label = Object.keys(info).find(key => /RAZON SOCIAL|DENOMINACION/.test(this.key(key)));
+        return label ? info[label] : null;
+    },
+    aggregateIndicator(values) {
+        if (values.includes(true)) return true;
+        return values.length && values.every(value => value === false) ? false : null;
     },
     build(datasets) {
         if (!datasets.length || datasets.length > 2) throw new Error('Cargue un reporte o un par TR5 y TR6.');
-        if (datasets.some(d => !['TR5', 'TR6'].includes(d.type)) || new Set(datasets.map(d => d.type)).size !== datasets.length) throw new Error('Para el cruce seleccione un TR5 y un TR6, sin repetir el tipo.');
-        const rucs = datasets.map(d => this.ruc(d));
-        if (datasets.length === 2 && (rucs.some(r => !r) || rucs[0] !== rucs[1])) throw new Error('No se puede cruzar: ambos reportes deben tener un RUC identificable e idéntico.');
-        const people = new Map();
-        datasets.forEach((dataset, sourceIndex) => {
-            const findCol = (aliases, exclude = []) => {
-                const normAliases = aliases.map(a => this.key(a));
-                const normExclude = exclude.map(e => this.key(e));
-                return dataset.columns.findIndex(c => {
-                    const k = this.key(c.rawHeader || '');
-                    if (!k) return false;
-                    if (normExclude.some(ex => k.includes(ex))) return false;
-                    return normAliases.some(alias => k === alias || (alias.length > 3 && (k.startsWith(alias) || k.endsWith(alias) || k === alias)));
-                });
-            };
-
-            const paternoIndex = dataset.columns.findIndex(c => {
-                const k = this.key(c.rawHeader || '');
-                return k === 'APELLIDO PATERNO' || k.includes('PATERNO');
-            });
-            const maternoIndex = dataset.columns.findIndex(c => {
-                const k = this.key(c.rawHeader || '');
-                return k === 'APELLIDO MATERNO' || k.includes('MATERNO');
-            });
-            const nombresIndex = dataset.columns.findIndex(c => {
-                const k = this.key(c.rawHeader || '');
-                return k === 'NOMBRES' || (k.includes('NOMBRES') && !k.includes('APELLIDO'));
-            });
-
-            let typeIndex = findCol(
-                ['TIPO', 'TIPO DOC', 'TIPO DOCUMENTO', 'TIPO DE DOCUMENTO', 'TIP DOC', 'TIP DE DOC', 'TIPO DE DOC'],
-                ['TRABAJADOR', 'CONTRATO', 'REGIMEN', 'ESTABLECIMIENTO', 'NUMERO', 'NRO']
-            );
-            let numberIndex = findCol(
-                ['NUMERO', 'NUMERO DOC', 'NUMERO DOCUMENTO', 'NUMERO DE DOCUMENTO', 'NRO DOC', 'NRO DOCUMENTO', 'NRO DE DOCUMENTO', 'NUM DOC', 'NUM DOCUMENTO', 'DOCUMENTO DE IDENTIDAD', 'NRO', 'DOCUMENTO'],
-                ['RUC', 'TRABAJADOR', 'CONTRATO', 'REGIMEN', 'TELEFONO', 'CUENTA', 'HIJOS', 'TIPO']
-            );
-
-            if (paternoIndex >= 2) {
-                if (typeIndex < 0 && numberIndex < 0) {
-                    typeIndex = paternoIndex - 2;
-                    numberIndex = paternoIndex - 1;
-                } else if (typeIndex < 0 && numberIndex !== (paternoIndex - 2) && (paternoIndex - 2) >= 0) {
-                    typeIndex = paternoIndex - 2;
-                } else if (numberIndex < 0 && typeIndex !== (paternoIndex - 1) && (paternoIndex - 1) >= 0) {
-                    numberIndex = paternoIndex - 1;
-                }
-            } else if (paternoIndex === 1 && (typeIndex < 0 || numberIndex < 0)) {
-                if (numberIndex < 0 && typeIndex !== 0) numberIndex = 0;
-                else if (typeIndex < 0 && numberIndex !== 0) typeIndex = 0;
-            }
-
-            if (typeIndex < 0 || numberIndex < 0 || typeIndex === numberIndex) throw new Error('No se identificaron las columnas de documento con seguridad.');
-            const nameIndexes = [paternoIndex, maternoIndex, nombresIndex];
-            dataset.records.forEach(record => {
-                const type = (record.rawCells[typeIndex] || '').trim(), number = (record.rawCells[numberIndex] || '').trim();
-                const resolved = Boolean(type && number);
-                const id = resolved ? JSON.stringify([this.key(type), number]) : `unresolved:${sourceIndex}:${record.sourceRow}`;
-                if (!people.has(id)) people.set(id, { id, type, number, resolved, TR5: [], TR6: [], names: new Set() });
-                const person = people.get(id);
-                const names = nameIndexes.map(i => i < 0 ? '' : (record.rawCells[i] || '').trim());
-                person.names.add(names.join(' '));
-                person[dataset.type].push({ record, dataset, names });
-            });
-        });
+        if (datasets.some(dataset => !['TR5', 'TR6'].includes(dataset.type)) || new Set(datasets.map(dataset => dataset.type)).size !== datasets.length) {
+            throw Object.assign(new Error('Para el cruce seleccione un TR5 y un TR6, sin repetir el tipo.'), { code: 'FORMAT' });
+        }
+        const rucs = datasets.map(dataset => this.ruc(dataset));
         const paired = datasets.length === 2;
-        people.forEach(person => {
-            person.status = !person.resolved ? 'Identidad incompleta' : !paired ? 'Sin contraparte cargada' : person.TR5.length && person.TR6.length ? 'En ambos' : person.TR5.length ? 'Solo TR5' : 'Solo TR6';
-            person.identityDifference = new Set([...person.TR5, ...person.TR6].map(item => JSON.stringify(item.names.map(n => this.key(n))))).size > 1;
-            
-            // Inspección laboral: indicadores de fiscalización
-            person.hasMultipleTR5 = person.TR5.length > 1;
-            
-            // CUSPP en TR6
-            if (person.TR6.length > 0) {
-                const cusppFound = person.TR6.some(item => {
-                    const idx = item.dataset.columns.findIndex(c => TRAnalysis.key(c.rawHeader || '') === 'CUSPP');
-                    return idx >= 0 && (item.record.rawCells[idx] || '').trim().length > 0;
-                });
-                person.hasCuspp = cusppFound;
-
-                // SCTR Salud en TR6
-                const sctrSaludFound = person.TR6.some(item => {
-                    return item.dataset.columns.some((c, cIdx) => {
-                        const k = TRAnalysis.key(c.rawHeader || '');
-                        if ((k === 'EPS' || k === 'ESSALUD') && cIdx >= 12 && cIdx <= 16) {
-                            return (item.record.rawCells[cIdx] || '').trim().toUpperCase() === 'X';
-                        }
-                        return false;
-                    });
-                });
-                person.hasSctr = sctrSaludFound;
-            } else {
-                person.hasCuspp = null;
-                person.hasSctr = null;
+        if (paired && (rucs.some(ruc => !ruc) || rucs[0] !== rucs[1])) {
+            throw Object.assign(new Error('No se puede cruzar: ambos reportes deben tener un RUC identificable e idéntico.'), { code: 'FORMAT' });
+        }
+        const people = new Map();
+        const schemaIssues = [];
+        datasets.forEach((dataset, sourceIndex) => {
+            const fields = this.schema(dataset);
+            const documentEvaluable = fields.type.index !== null && fields.number.index !== null;
+            if (!documentEvaluable) {
+                schemaIssues.push({ type: dataset.type, code: 'IDENTITY_SCHEMA', message: `${dataset.type}: columnas documentales ausentes o ambiguas. Se conservan los registros por fila.` });
+            }
+            if (dataset.type === 'TR6' && (!fields.sctr || fields.cuspp.index === null)) {
+                schemaIssues.push({ type: dataset.type, code: 'HEALTH_SCHEMA', message: 'TR6: no se pudieron identificar todos los campos de CUSPP o SCTR salud.' });
+            }
+            for (const record of dataset.records) {
+                const type = TRSchema.read(record, fields.type).value?.trim() ?? '';
+                const number = TRSchema.read(record, fields.number).value?.trim() ?? '';
+                const aligned = record.rawCells.length === dataset.rawHeaders.length;
+                const resolved = documentEvaluable && aligned && Boolean(this.key(type) && number);
+                const id = resolved ? JSON.stringify([this.key(type), number]) : `unresolved:${sourceIndex}:${record.sourceRow}`;
+                if (!people.has(id)) people.set(id, { id, type, number, resolved, documentEvaluable, TR5: [], TR6: [], names: new Set() });
+                const person = people.get(id);
+                const names = [fields.surname, fields.secondSurname, fields.names].map(field => TRSchema.read(record, field).value?.trim() ?? '');
+                const item = { record, dataset, names };
+                if (dataset.type === 'TR6') {
+                    item.health = aligned ? TRSchema.health(record, fields) : { cuspp: null, sctr: null, healthRegime: null, pensionRegime: null };
+                }
+                person.names.add(names.filter(Boolean).join(' '));
+                person[dataset.type].push(item);
             }
         });
-        const company = datasets.map(d => this.companyName(d)).find(Boolean) || null;
-        return { datasets, ruc: rucs[0], company, paired, people: [...people.values()] };
+        const crossable = paired && !schemaIssues.some(issue => issue.code === 'IDENTITY_SCHEMA');
+        for (const person of people.values()) {
+            if (!person.documentEvaluable) person.status = 'Identidad no evaluable';
+            else if (!person.resolved) person.status = 'Identidad incompleta';
+            else if (!paired) person.status = 'Sin contraparte cargada';
+            else if (!crossable) person.status = 'Cruce no evaluable';
+            else if (person.TR5.length && person.TR6.length) person.status = 'En ambos';
+            else person.status = person.TR5.length ? 'Solo TR5' : 'Solo TR6';
+            person.identityDifference = new Set([...person.TR5, ...person.TR6].map(item => JSON.stringify(item.names.map(this.key)))).size > 1;
+            person.hasMultipleTR5 = person.TR5.length > 1;
+            person.hasCuspp = this.aggregateIndicator(person.TR6.map(item => item.health.cuspp === null ? null : Boolean(item.health.cuspp)));
+            person.hasSctr = this.aggregateIndicator(person.TR6.map(item => item.health.sctr));
+        }
+        const company = datasets.map(dataset => this.companyName(dataset)).find(Boolean) || null;
+        return { datasets, ruc: rucs[0], company, paired, crossable, schemaIssues, people: [...people.values()] };
     }
 };
 if (typeof module !== 'undefined' && module.exports) module.exports = TRAnalysis;
 
 const TRView = {
-    analysis: null, page: 0, selected: new Set(), filtered: [], current: null, activeQuickFilter: 'all',
+    analysis: null, intendencia: '', page: 0, selected: new Set(), filtered: [], current: null, activeQuickFilter: 'all',
     reset() {
         this.analysis = null; this.page = 0; this.selected.clear(); this.filtered = []; this.current = null; this.activeQuickFilter = 'all';
+        this.intendencia = '';
+        document.getElementById('tr-export-scope').value = 'all';
         document.getElementById('tr-person-search').value = '';
         document.getElementById('tr-person-filter').value = 'all';
         for (const [id, value] of [['tr-worker-field','all'],['tr-worker-type',''],['tr-worker-occupation','']]) {
@@ -228,8 +196,9 @@ const TRView = {
         document.getElementById('tr-people').classList.add('hidden');
         document.getElementById('tr-person-detail').replaceChildren();
     },
-    set(analysis) {
+    set(analysis, intendencia) {
         this.analysis = analysis; this.page = 0; this.activeQuickFilter = 'all';
+        this.intendencia = intendencia;
         TRFilterUI.set(analysis);
         this.configureWorkerFilters(analysis);
         document.getElementById('tr-people').classList.remove('hidden');
@@ -283,8 +252,8 @@ const TRView = {
         const total = people.length;
         const multiple = people.filter(p => p.hasMultipleTR5 || p.TR6.length > 1).length;
         const hasTR6 = people.some(p => p.TR6.length > 0);
-        const noCuspp = hasTR6 ? people.filter(p => p.TR6.length > 0 && !p.hasCuspp).length : 0;
-        const noSctr = hasTR6 ? people.filter(p => p.TR6.length > 0 && !p.hasSctr).length : 0;
+        const noCuspp = hasTR6 ? people.filter(p => p.hasCuspp === false).length : 0;
+        const noSctr = hasTR6 ? people.filter(p => p.hasSctr === false).length : 0;
 
         const setVal = (id, count, badgeSuffix = '') => {
             const el = document.getElementById(id);
@@ -324,8 +293,8 @@ const TRView = {
             if (filter === 'selected') return this.selected.has(p.id);
             if (filter === 'differences') return p.identityDifference;
             if (filter === 'multiple') return p.hasMultipleTR5 || (p.TR6.length > 1);
-            if (filter === 'no_cuspp') return p.TR6.length > 0 && !p.hasCuspp;
-            if (filter === 'no_sctr') return p.TR6.length > 0 && !p.hasSctr;
+            if (filter === 'no_cuspp') return p.hasCuspp === false;
+            if (filter === 'no_sctr') return p.hasSctr === false;
             return p.status === filter;
         });
 
@@ -340,7 +309,7 @@ const TRView = {
         if (exportButton) exportButton.disabled = !hasFilter || !people.length;
         el('tr-selection-count').textContent = `${this.selected.size} trabajadores seleccionados (todas sus filas TR5/TR6)`;
         this.page = Math.max(0, Math.min(this.page, Math.ceil(people.length / 50) - 1));
-        el('tr-person-summary').textContent = `${this.analysis.people.length} identidades · ${people.length} visibles · ${this.analysis.datasets.reduce((n,d) => n + d.records.length, 0)} registros originales · ${this.analysis.paired ? 'Cruce validado por RUC' : 'Un reporte'}`;
+        el('tr-person-summary').textContent = `${this.intendencia} · ${this.analysis.people.length} identidades · ${people.length} visibles · ${this.analysis.datasets.reduce((n,d) => n + d.records.length, 0)} registros originales · ${this.analysis.crossable ? 'Cruce validado por RUC' : this.analysis.paired ? 'Cruce documental no evaluable' : 'Un reporte'}`;
         
         el('tr-person-body').replaceChildren(...people.slice(this.page * 50, this.page * 50 + 50).map((person, idx) => {
             const row = document.createElement('tr');
@@ -460,7 +429,7 @@ const TRView = {
         const infoDiv = document.createElement('div');
         const badgeRep = person.hasMultipleTR5 
             ? `<span class="bg-amber-400/20 text-amber-300 border border-amber-400/30 text-xs font-bold px-2.5 py-1 rounded-full ml-3">🔁 ${person.TR5.length} registros TR5</span>`
-            : `<span class="bg-green-400/20 text-green-300 border border-green-400/30 text-xs font-bold px-2.5 py-1 rounded-full ml-3">1 registro TR5</span>`;
+            : `<span class="bg-green-400/20 text-green-300 border border-green-400/30 text-xs font-bold px-2.5 py-1 rounded-full ml-3">${person.TR5.length ? '1 registro TR5' : 'Sin registros TR5'}</span>`;
         
         infoDiv.innerHTML = `
             <div class="flex items-center flex-wrap gap-2">
@@ -582,35 +551,25 @@ const TRView = {
             tr6Section.className = 'bg-white p-6 rounded-2xl border border-gray-200 shadow-sm mb-6';
             
             const tr6RecordsHtml = person.TR6.map(item => {
-                const getCell = colName => {
-                    const idx = item.dataset.columns.findIndex(c => TRAnalysis.key(c.rawHeader || '').includes(colName));
-                    return idx >= 0 ? (item.record.rawCells[idx] || '').trim() : '';
-                };
-                // TR6 puede repetir el título "Tipo de Régimen" en salud y pensiones.
-                // Conservar posiciones en vez de tomar siempre la primera coincidencia.
-                const regimenColumns = item.dataset.columns.filter(c => TRAnalysis.key(c.rawHeader || '').includes('REGIMEN'));
-                const read = column => column ? (item.record.rawCells[column.index] || '').trim() : '';
-                const cuspp = getCell('CUSPP');
-                const regimenSalud = read(regimenColumns[0]) || getCell('SALUD');
-                const regimenPension = read(regimenColumns[1]) || getCell('PENSION');
-
+                const { cuspp, healthRegime, pensionRegime, sctr } = item.health;
+                const sctrLabel = sctr === null ? 'No evaluable' : sctr ? 'SCTR salud marcado en esta fila' : 'SCTR salud sin marca (verificar)';
                 return `
                     <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 p-4 bg-blue-50/50 rounded-xl text-xs border border-blue-100 mb-2">
                         <div>
                             <span class="text-gray-500 block mb-1">Aseguramiento de Salud</span>
-                            <strong class="text-gray-800">${safe(regimenSalud || 'No registrado')}</strong>
+                            <strong class="text-gray-800">${safe(healthRegime ?? 'No evaluable')}</strong>
                         </div>
                         <div>
                             <span class="text-gray-500 block mb-1">Régimen Pensionario</span>
-                            <strong class="text-gray-800">${safe(regimenPension || 'No registrado')}</strong>
+                            <strong class="text-gray-800">${safe(pensionRegime ?? 'No evaluable')}</strong>
                         </div>
                         <div>
                             <span class="text-gray-500 block mb-1">Código CUSPP</span>
-                            <strong class="${cuspp ? 'text-gray-900 font-mono' : 'text-orange-600 font-bold'}">${safe(cuspp || '⚠️ Sin CUSPP identificado')}</strong>
+                            <strong class="${cuspp ? 'text-gray-900 font-mono' : 'text-orange-600 font-bold'}">${safe(cuspp === null ? 'No evaluable' : cuspp || 'Sin CUSPP registrado')}</strong>
                         </div>
                         <div>
                             <span class="text-gray-500 block mb-1">SCTR salud (indicador)</span>
-                            <strong class="${person.hasSctr ? 'text-green-700' : 'text-red-700'}">${person.hasSctr ? 'SCTR salud marcado en TR6' : '🛡️ SCTR salud no detectado (verificar)'}</strong>
+                            <strong class="${sctr === true ? 'text-green-700' : 'text-gray-800'}">${sctrLabel}</strong>
                         </div>
                     </div>
                 `;

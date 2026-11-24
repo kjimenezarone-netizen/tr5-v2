@@ -1,6 +1,6 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
-const JSZip = require('../vendor/jszip.min.js');
+const JSZip = require('jszip');
 const parser = require('../file-parser.js');
 const model = require('../ruc.js');
 async function readZip(bytes, zipName) {

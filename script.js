@@ -1,11 +1,11 @@
 const AppState = {
-    DRIVE_API_URL: "https://script.google.com/a/macros/sunafil.gob.pe/s/AKfycbxIvsvoO23bqVz4EOhf4a3BcxIGZ9kADyL5cPrzl1nORyKRfezWrJxI8wcUQtD20NnNlg/exec",
     isLoggedIn: false,
     intendencia: '',
     activePage: 'inicio',
     sessionToken: null,
-    loginAttempts: 0,
-    lockoutUntil: null,
+    sessionExpires: 0,
+    sessionTimer: null,
+    trGeneration: 0,
     globalRows: [],
     sourceDataset: null,
     trDatasets: [],
@@ -16,32 +16,31 @@ const AppState = {
     currentPage: 1,
     pageSize: 50,
     currentFilteredRows: [],
-    searchDebounceTimeout: null,
-    dashboardCache: null,
-    dashboardCacheTime: 0
+    searchDebounceTimeout: null
 };
 
-// Restaurar token de sesión si existe en sessionStorage (y no expiró)
-(function restoreSession() {
-    const stored = sessionStorage.getItem('tr_v2_session');
-    if (stored) {
-        try {
-            const parsed = JSON.parse(stored);
-            if (parsed.token && parsed.expires > Date.now()) {
-                AppState.sessionToken = parsed.token;
-                AppState.isLoggedIn = true;
-            } else {
-                sessionStorage.removeItem('tr_v2_session');
-            }
-        } catch (e) {
-            sessionStorage.removeItem('tr_v2_session');
-        }
-    }
-})();
-
 const Utils = {
+    async loadPdf() {
+        if (typeof html2pdf === 'function') return;
+        if (!this.pdfScript) {
+            this.pdfScript = new Promise((resolve, reject) => {
+                const script = document.createElement('script');
+                script.src = ReaderConfig.asset('html2pdf.bundle.min.js');
+                script.onload = resolve;
+                script.onerror = () => {
+                    script.remove();
+                    reject(new Error('No se pudo cargar el generador PDF.'));
+                };
+                document.head.appendChild(script);
+            }).catch(error => {
+                this.pdfScript = null;
+                throw error;
+            });
+        }
+        await this.pdfScript;
+    },
     escapeHTML(str) {
-        if (!str) return '';
+        if (str === null || str === undefined) return '';
         return String(str)
             .replace(/&/g, "&amp;")
             .replace(/</g, "&lt;")
@@ -107,12 +106,14 @@ const UI = {
     toggleProcessor() {
         const int = document.getElementById('intendencia').value;
         AppState.intendencia = int;
-        ['nav_procesador', 'nav_ruc', 'open-tr', 'open-ruc', 'file_input', 'btn_process_data'].forEach(id => {
+        ['nav_procesador', 'nav_ruc', 'open-tr', 'open-ruc'].forEach(id => {
             document.getElementById(id).disabled = !int;
         });
+        document.getElementById('file_input').disabled = !int || AppState.trBusy;
+        document.getElementById('btn_process_data').disabled = !int || AppState.trBusy;
         document.getElementById('intendencia-help').textContent = int
-            ? '✓ Sede activa.'
-            : '⚠ Seleccione su intendencia para habilitar los módulos.';
+            ? 'Intendencia para la próxima carga.'
+            : 'Seleccione su intendencia para acceder a los módulos.';
         if (!int && ['procesador', 'ruc'].includes(AppState.activePage)) UI.showPage('inicio');
         const zone = document.getElementById('upload-zone');
         if (int !== "") {
@@ -188,6 +189,17 @@ const UI = {
     resetWorkspaceTR() {
         if (AppState.trBusy) return;
         if (!window.confirm('¿Finalizar esta consulta? Se borrarán los resultados, filtros, fichas y vistas del lector TR. Sus archivos TXT y los Excel descargados no se modifican.')) return;
+        UI.clearWorkspaceTR();
+    },
+    clearWorkspaceTR() {
+        AppState.trGeneration++;
+        Processing.cancel('TR');
+        AppState.trBusy = false;
+        document.getElementById('file_input').disabled = !AppState.intendencia;
+        document.getElementById('btn_process_data').disabled = !AppState.intendencia;
+        document.getElementById('tr-cancel').disabled = true;
+        document.getElementById('btn_clear_file').disabled = false;
+        document.getElementById('loader').style.display = 'none';
         UI.resetFileSelection();
         clearTimeout(AppState.searchDebounceTimeout);
         AppState.searchDebounceTimeout = null;
@@ -302,8 +314,8 @@ const UI = {
     renderFileMetricsAndFilters(rows) {
         document.getElementById('file_metrics_container').classList.remove('hidden');
 
-        const conteoTipos = {};
-        const conteoOcup = {};
+        const conteoTipos = Object.create(null);
+        const conteoOcup = Object.create(null);
 
         rows.forEach(r => {
             const t = r["Tipo Doc."] || "No Reportado";
@@ -349,6 +361,7 @@ const Core = {
     async processData() {
         if (!UI.requireIntendencia()) return;
         if (AppState.trBusy) return;
+        if (TRExport.busy) return Utils.showToast('Espera a que termine el Excel o cancela su generación.', 'info');
         const files = [...document.getElementById('file_input').files];
         if (files.length > 2) return Utils.showToast('Seleccione como máximo un TR5 y un TR6.', 'info');
         const file = document.getElementById('file_input').files[0];
@@ -362,35 +375,34 @@ const Core = {
         document.getElementById('loader').style.display = 'block';
         const processingStarted = performance.now();
         const processingOffice = AppState.intendencia;
+        const request = ++AppState.trGeneration;
         AppState.trBusy = true;
+        document.getElementById('file_input').disabled = true;
+        document.getElementById('btn_process_data').disabled = true;
         document.getElementById('tr-reset-all').disabled = true;
         document.getElementById('tr-reset-all-bottom').disabled = true;
         document.getElementById('tr-cancel').disabled = false;
         document.getElementById('btn_clear_file').disabled = true;
+        TRExport.syncDownloadControls();
 
         try {
+            const result = await Processing.run('TR', files, message => {
+                if (request === AppState.trGeneration) document.getElementById('tr-processing-status').textContent = message;
+            });
+            if (request !== AppState.trGeneration) return;
+            const { datasets, analysis, table: { rows, cols } } = result;
+            const dataset = datasets[0];
+
             clearTimeout(AppState.searchDebounceTimeout);
             AppState.searchDebounceTimeout = null;
             document.getElementById('search_box').value = '';
-            AppState.globalRows = [];
-            AppState.globalCols = [];
-            AppState.currentFilteredRows = [];
-            AppState.sourceDataset = null;
-            AppState.trDatasets = [];
-            if (typeof TRView !== 'undefined' && TRView.reset) TRView.reset();
-            document.getElementById('preview_section').classList.add('hidden');
-
-            const result = await Processing.run('TR', files, message => { document.getElementById('tr-processing-status').textContent = message; });
-            const { datasets, analysis, table: { rows, cols } } = result;
-            const dataset = datasets[0];
-            UI.renderInfoBox(this.extractCompanyInfo(dataset.text.split(/\r\n|\n|\r/), dataset));
+            TRView.reset();
+            UI.renderInfoBox(ReportSchema.companyInfo(dataset));
             AppState.trDatasets = datasets;
 
             AppState.globalRows = rows;
             AppState.sourceDataset = dataset;
             AppState.globalCols = cols;
-
-            if (AppState.globalRows.length === 0) throw new Error("No se encontraron datos después de los encabezados.");
 
             UI.drawTable(AppState.globalRows, AppState.globalCols);
             UI.renderFileMetricsAndFilters(AppState.globalRows);
@@ -424,26 +436,39 @@ const Core = {
             }
             const sourceSelect = document.getElementById('tr-source-select');
             sourceSelect.replaceChildren(...datasets.map((d, i) => { const option = document.createElement('option'); option.value = String(i); option.textContent = `${d.type} — ${d.sourceFile}`; return option; }));
-            TRView.set(analysis);
+            TRView.set(analysis, processingOffice);
             document.getElementById('tr-reset-all').disabled = false;
             document.getElementById('tr-reset-all-bottom').disabled = false;
             UI.resetFileSelection(); // Solo al terminar correctamente. Mantener TRView y AppState.
-            document.getElementById('tr-processing-status').textContent = 'Carga finalizada. Puede seleccionar nuevos TXT; los resultados siguen disponibles.';
+            const warnings = analysis.schemaIssues.map(issue => issue.message).join(' ');
+            document.getElementById('tr-processing-status').textContent = 'Carga finalizada. ' + (warnings || 'Puede seleccionar nuevos TXT; los resultados siguen disponibles.');
 
             Dashboard.registrarEnDrive('VISUALIZACIÓN', { intendencia: processingOffice, modulo: datasets.length === 2 ? 'TR5_TR6' : dataset.type, registros: datasets.reduce((n, d) => n + d.records.length, 0), archivos: files.length, bytes: files.reduce((n, f) => n + f.size, 0), duracionMs: performance.now() - processingStarted });
 
         } catch (error) {
-            document.getElementById('tr-processing-status').textContent = error.message;
-            if (error.name !== 'AbortError') Utils.showToast("Error al procesar: " + error.message, "error");
-            console.error("Detalle del error:", error);
+            if (request !== AppState.trGeneration) return;
+            const retained = TRView.analysis ? ' Se conserva la consulta anterior.' : '';
+            document.getElementById('tr-processing-status').textContent = error.message + retained;
+            if (error.name !== 'AbortError') {
+                Utils.showToast('Error al procesar: ' + error.message);
+                Dashboard.registrarEnDrive(error.code === 'FORMAT' ? 'FORMATO_DESCONOCIDO' : 'ERROR', {
+                    intendencia: processingOffice, modulo: 'TR', archivos: files.length,
+                    bytes: files.reduce((sum, input) => sum + input.size, 0)
+                });
+            }
         } finally {
-            AppState.trBusy = false;
-            const hasResults = !!TRView.analysis;
-            document.getElementById('tr-reset-all').disabled = !hasResults;
-            document.getElementById('tr-reset-all-bottom').disabled = !hasResults;
-            document.getElementById('tr-cancel').disabled = true;
-            document.getElementById('btn_clear_file').disabled = false;
-            document.getElementById('loader').style.display = 'none';
+            if (request === AppState.trGeneration) {
+                AppState.trBusy = false;
+                const hasResults = Boolean(TRView.analysis);
+                document.getElementById('tr-reset-all').disabled = !hasResults;
+                document.getElementById('tr-reset-all-bottom').disabled = !hasResults;
+                document.getElementById('tr-cancel').disabled = true;
+                document.getElementById('btn_clear_file').disabled = false;
+                document.getElementById('loader').style.display = 'none';
+                document.getElementById('file_input').disabled = !AppState.intendencia;
+                document.getElementById('btn_process_data').disabled = !AppState.intendencia;
+                TRExport.syncDownloadControls();
+            }
         }
     },
 
@@ -453,55 +478,10 @@ const Core = {
         clearTimeout(AppState.searchDebounceTimeout);
         const { rows, cols } = FileParser.table(dataset);
         AppState.sourceDataset = dataset; AppState.globalRows = rows; AppState.globalCols = cols;
-        UI.renderInfoBox(Core.extractCompanyInfo(dataset.text.split(/\r\n|\n|\r/), dataset));
+        UI.renderInfoBox(ReportSchema.companyInfo(dataset));
         document.getElementById('search_box').value = '';
         UI.drawTable(rows, cols); UI.renderFileMetricsAndFilters(rows);
     },
-
-    extractCompanyInfo(linesOrDataset, maybeDataset) {
-        let lines = [];
-        let dataset = null;
-        if (Array.isArray(linesOrDataset)) {
-            lines = linesOrDataset;
-            dataset = maybeDataset || null;
-        } else if (linesOrDataset && typeof linesOrDataset === 'object') {
-            dataset = linesOrDataset;
-            lines = (dataset.text || '').split(/\r\n|\n|\r/);
-        } else if (typeof linesOrDataset === 'string') {
-            lines = linesOrDataset.split(/\r\n|\n|\r/);
-        }
-
-        const info = {};
-        let currentKey = "";
-        const maxLines = dataset?.headerRow ? Math.min(dataset.headerRow - 1, lines.length) : lines.length;
-
-        for (let i = 0; i < maxLines; i++) {
-            const raw = lines[i];
-            const l = (raw || '').trim();
-            if (!l) continue;
-
-            // Al llegar a una línea separadora (=== o ---) o a cualquier fila tabular (con |),
-            // la sección de metadatos de cabecera termina y no debe procesarse nada más.
-            if (/^[=-]{3,}/.test(l) || l.includes('|')) {
-                break;
-            }
-
-            if (l.includes(':')) {
-                const colonIdx = l.indexOf(':');
-                const key = l.substring(0, colonIdx).trim();
-                let value = l.substring(colonIdx + 1).trim();
-                if (key && value && value.length > 0) {
-                    value = value.replace(/^"/, '').replace(/"$/, '').trim();
-                    info[key] = value;
-                    currentKey = key;
-                }
-            } else if (currentKey && l && !l.includes('|') && !l.includes('\t')) {
-                info[currentKey] += ' ' + l;
-            }
-        }
-        return info;
-    },
-
 
     runFilter() {
         clearTimeout(AppState.searchDebounceTimeout);
@@ -527,116 +507,77 @@ const Core = {
 // dashboard
 const Dashboard = {
     async attemptLogin() {
-        if (AppState.lockoutUntil && Date.now() < AppState.lockoutUntil) {
-            const segsRestantes = Math.ceil((AppState.lockoutUntil - Date.now()) / 1000);
-            Utils.showToast(`Demasiados intentos. Espere ${segsRestantes}s.`, 'error');
-            return;
-        }
-
-        const u = document.getElementById('admin-user').value.trim();
-        const p = document.getElementById('admin-pass').value;
-        if (!u || !p) return Utils.showToast('Complete usuario y contraseña.', 'info');
-
-        const btn = document.getElementById('btn_login_submit');
-        if (btn) { btn.disabled = true; btn.textContent = 'Verificando...'; }
-
+        const button = document.getElementById('btn_login_submit');
+        if (button.disabled) return;
+        button.disabled = true;
+        button.textContent = 'Verificando…';
         try {
-
-            const data = await SheetsAPI.request({ accion: 'LOGIN', user: u, password: p });
-
-            if (data.status === 'ok' && data.token) {
-                // Login exitoso 
-                AppState.isLoggedIn = true;
-                AppState.sessionToken = data.token;
-                AppState.loginAttempts = 0;
-                AppState.lockoutUntil = null;
-
-                // Guardar sesión con expiración de 8 horas
-                sessionStorage.setItem('tr_v2_session', JSON.stringify({
-                    token: data.token,
-                    expires: data.expires
-                }));
-
-                document.getElementById('login-modal').classList.add('hidden');
-                UI.showPage('dashboard');
-                Utils.showToast('Acceso autorizado', 'success');
-                this.renderDashboard();
-            } else {
-                //Login fallido
-                if (data.status === 'not_configured') return Utils.showToast('Configure ADMIN_USER y ADMIN_PASSWORD en Apps Script.');
-                if (data.status === 'locked') { AppState.lockoutUntil = Date.now() + 15 * 60 * 1000; return Utils.showToast('Acceso temporalmente bloqueado por el servidor. Espere 15 minutos.'); }
-                AppState.loginAttempts++;
-                const restantes = Math.max(0, 5 - AppState.loginAttempts);
-
-                if (AppState.loginAttempts >= 5) {
-                    AppState.lockoutUntil = Date.now() + 15 * 60 * 1000;
-                    Utils.showToast('Cuenta bloqueada 15 minutos por exceso de intentos.', 'error');
-                } else {
-                    Utils.showToast(`Credenciales incorrectas. Intentos restantes: ${restantes}`, 'error');
-                }
+            const data = await SheetsAPI.request({ accion: 'LOGIN' });
+            if (data.status !== 'ok' || !data.token || data.expires <= Date.now()) {
+                return Utils.showToast('La cuenta institucional no tiene permiso para consultar las estadísticas.');
             }
-        } catch (err) {
-            // si el backend no soporta LOGIN aún, informar al admin
-            console.error('Error en login:', err);
-            Utils.showToast('Error de conexión con el servidor de autenticación.', 'error');
+            AppState.isLoggedIn = true;
+            AppState.sessionToken = data.token;
+            AppState.sessionExpires = data.expires;
+            clearTimeout(AppState.sessionTimer);
+            AppState.sessionTimer = setTimeout(() => this.logout('La sesión expiró.'), data.expires - Date.now());
+            document.getElementById('login-modal').classList.add('hidden');
+            UI.showPage('dashboard');
+            await this.renderDashboard();
+        } catch (error) {
+            Utils.showToast(error.message);
         } finally {
-            if (btn) { btn.disabled = false; btn.textContent = 'INGRESAR'; }
+            button.disabled = false;
+            button.textContent = 'Verificar acceso';
         }
     },
-    logout() {
-        if (AppState.sessionToken) SheetsAPI.request({ accion: 'LOGOUT', token: AppState.sessionToken }).catch(() => { });
+    logout(message = 'Sesión cerrada.') {
+        const token = AppState.sessionToken;
         AppState.isLoggedIn = false;
         AppState.sessionToken = null;
-        // Limpiar datos personales de la memoria del navegador
-        AppState.globalRows = [];
-        AppState.currentFilteredRows = [];
+        AppState.sessionExpires = 0;
+        clearTimeout(AppState.sessionTimer);
+        AppState.sessionTimer = null;
+        if (token) SheetsAPI.request({ accion: 'LOGOUT', token }).catch(() => {});
+        SheetsAPI.reset();
+        UI.clearWorkspaceTR();
+        document.dispatchEvent(new Event('lector:reset'));
         AppState.vistasPorInt = {};
         AppState.descargasPorInt = {};
-        AppState.dashboardCache = null;    // invalidar cache al cerrar sesión
-        AppState.dashboardCacheTime = 0;
-        sessionStorage.removeItem('tr_v2_session');
-        // Limpiar tabla y estado visual
-        const tbody = document.getElementById('table_body');
-        if (tbody) tbody.innerHTML = '';
-        document.getElementById('preview_section')?.classList.add('hidden');
+        this.growthValue = 'N/A';
+        this.growthSign = '';
+        for (const id of ['audit-tbody', 'stat-total-vis', 'stat-total-desc', 'stat-top-sede', 'stat-growth', 'dashboard-scope', 'contenedor-pdf-temporal']) {
+            document.getElementById(id).replaceChildren();
+        }
+        for (const id of ['chart-visChart', 'chart-descChart']) {
+            window[id]?.destroy();
+            window[id] = null;
+        }
+        document.getElementById('contenedor-pdf-temporal').style.display = 'none';
+        document.getElementById('btn_report_pdf').disabled = true;
+        document.getElementById('intendencia').value = '';
+        UI.toggleProcessor();
         UI.showPage('inicio');
-        Utils.showToast('Sesión cerrada correctamente.', 'info');
+        Utils.showToast(message, 'info');
     },
     async renderDashboard() {
         const txtVis = document.getElementById('stat-total-vis');
         const txtDesc = document.getElementById('stat-total-desc');
         const topSedeLabel = document.getElementById('stat-top-sede');
-        if (txtVis) txtVis.innerText = "Cargando...";
-
-        // Verificar que la sesión siga activa
-        if (!AppState.isLoggedIn || !AppState.sessionToken) {
-            Utils.showToast('Sesión expirada. Inicie sesión nuevamente.', 'error');
-            this.logout();
-            return;
-        }
-
+        const scope = document.getElementById('dashboard-scope');
+        const report = document.getElementById('btn_report_pdf');
+        const token = AppState.sessionToken;
+        if (!token || AppState.sessionExpires <= Date.now()) return this.logout('La sesión expiró.');
+        report.disabled = true;
+        txtVis.textContent = 'Cargando…';
         try {
-            const CACHE_TTL = 5 * 60 * 1000; // 5 minutos de cache
-            const ahora = Date.now();
-            let allData;
-
-            if (AppState.dashboardCache && (ahora - AppState.dashboardCacheTime) < CACHE_TTL) {
-                // usar datos en cache — evita martillar GAS con 400 usuarios
-                allData = AppState.dashboardCache;
-            } else {
-                allData = await SheetsAPI.request({ accion: 'DASHBOARD', token: AppState.sessionToken });
-                if (!['ok', 'unauthorized'].includes(allData.status)) throw new Error('No se pudo consultar el dashboard.');
-                // guardar en cache
-                AppState.dashboardCache = allData;
-                AppState.dashboardCacheTime = ahora;
-            }
-
-            // Si el backend rechaza el token, cerrar sesión
-            if (allData.status === 'unauthorized') {
-                Utils.showToast('Sesión inválida o expirada.', 'error');
-                this.logout();
-                return;
-            }
+            const allData = await SheetsAPI.request({ accion: 'DASHBOARD', token });
+            if (AppState.sessionToken !== token) return;
+            if (allData.status === 'unauthorized') return this.logout('La sesión institucional ya no está disponible.');
+            if (allData.status !== 'ok') throw new Error('No se pudieron consultar las estadísticas.');
+            const modeLabel = { ANONYMOUS: 'Estadísticas declaradas por el usuario', INSTITUTIONAL: 'Estadísticas por cuenta institucional', OFF: 'Estadísticas desactivadas' };
+            scope.textContent = (modeLabel[allData.mode] || 'Estadísticas de uso') + (allData.limited ? ' · Últimos ' + allData.windowLimit + ' eventos' : '');
+            report.disabled = false;
 
             AppState.vistasPorInt = allData.visualizaciones || {};
             AppState.descargasPorInt = allData.descargas || {};
@@ -669,9 +610,8 @@ const Dashboard = {
             Dashboard.growthSign = "";
 
             if (allData.mesActual !== undefined && allData.mesAnterior !== undefined) {
-                if (allData.mesAnterior === 0) {
-                    Dashboard.growthValue = allData.mesActual > 0 ? "100" : "0";
-                    Dashboard.growthSign = allData.mesActual > 0 ? "+" : "";
+                if (allData.mesAnterior === 0 || allData.limited) {
+                    Dashboard.growthValue = 'N/A';
                 } else {
                     const diff = allData.mesActual - allData.mesAnterior;
                     const pct = (diff / allData.mesAnterior) * 100;
@@ -706,8 +646,11 @@ const Dashboard = {
             this.renderAuditLog(allData.ultimosRegistros || []);
 
         } catch (e) {
-            console.error("Error al cargar dashboard:", e);
-            if (txtVis) txtVis.innerText = "Error";
+            if (AppState.sessionToken === token) {
+                txtVis.textContent = 'Sin datos';
+                txtDesc.textContent = 'Sin datos';
+                scope.textContent = e.message;
+            }
         }
     },
     renderAuditLog(registros) {
@@ -718,10 +661,13 @@ const Dashboard = {
             return;
         }
         tbody.innerHTML = registros.map((r, i) => {
-            const accionColor = r.accion === 'VISUALIZACIÓN'
-                ? 'text-blue-700 bg-blue-50'
-                : 'text-green-700 bg-green-50';
-            const accionLabel = r.accion === 'VISUALIZACIÓN' ? '👁 Visualización' : '📥 Descarga Excel';
+            const actions = {
+                'VISUALIZACIÓN': ['text-blue-700 bg-blue-50', 'Visualización'],
+                DESCARGAR_EXCEL: ['text-green-700 bg-green-50', 'Descarga Excel'],
+                ERROR: ['text-red-700 bg-red-50', 'Error de procesamiento'],
+                FORMATO_DESCONOCIDO: ['text-amber-700 bg-amber-50', 'Formato desconocido']
+            };
+            const [accionColor, accionLabel] = Object.hasOwn(actions, r.accion) ? actions[r.accion] : ['text-gray-700 bg-gray-100', 'Evento'];
             return `<tr class="audit-row border-b border-gray-100">
                 <td class="px-4 py-2 text-gray-400 font-mono">${registros.length - i}</td>
                 <td class="px-4 py-2 text-gray-600">${Utils.escapeHTML(r.fecha)}</td>
@@ -812,19 +758,23 @@ const Dashboard = {
             return { chart1: '', chart2: '' };
         }
     },
-    generarReportePDF() {
-        console.log("Generando reporte con formato visual de Dashboard...");
+    async generarReportePDF() {
+        const token = AppState.sessionToken;
+        if (!token || AppState.sessionExpires <= Date.now()) return;
+        const button = document.getElementById('btn_report_pdf');
+        if (button.disabled) return;
         const txtTotalVistas = document.getElementById('stat-total-vis')?.innerText || "0";
         const txtTotalDescargas = document.getElementById('stat-total-desc')?.innerText || "0";
         const topSede = document.getElementById('stat-top-sede')?.innerText || "NINGUNA";
+        const scopeLabel = document.getElementById('dashboard-scope').textContent;
         const valCrecimiento = Dashboard.growthValue || "N/A";
         const signoCrecimiento = Dashboard.growthSign || "";
         const fechaActual = new Date().toLocaleString('es-PE', {
-            day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit'
+            timeZone: 'America/Lima', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit'
         });
 
         let tablaHTML = "";
-        const nombresIntendencias = Object.keys(AppState.vistasPorInt).sort();
+        const nombresIntendencias = [...new Set([...Object.keys(AppState.vistasPorInt), ...Object.keys(AppState.descargasPorInt)])].sort();
 
         if (nombresIntendencias.length > 0) {
             nombresIntendencias.forEach(int => {
@@ -832,9 +782,9 @@ const Dashboard = {
                 const d = AppState.descargasPorInt[int] || 0;
                 tablaHTML += `
                     <tr style="border-bottom: 1px solid #e2e8f0;">
-                        <td style="padding: 12px; text-align: left; font-weight: 600; color: #1e293b;">${int}</td>
-                        <td style="padding: 12px; text-align: center; color: #003366; font-weight: bold;">${v}</td>
-                        <td style="padding: 12px; text-align: center; color: #dc2626; font-weight: bold;">${d}</td>
+                        <td style="padding: 12px; text-align: left; font-weight: 600; color: #1e293b;">${Utils.escapeHTML(int)}</td>
+                        <td style="padding: 12px; text-align: center; color: #003366; font-weight: bold;">${Utils.escapeHTML(v)}</td>
+                        <td style="padding: 12px; text-align: center; color: #dc2626; font-weight: bold;">${Utils.escapeHTML(d)}</td>
                     </tr>`;
             });
         } else {
@@ -849,6 +799,7 @@ const Dashboard = {
                     <div>
                         <h1 style="color: #003366; margin: 0; font-size: 22px; font-weight: 800; letter-spacing: -0.5px;">INFORME DE ACTIVIDAD DE USUARIOS</h1>
                         <p style="margin: 5px 0; color: #dc2626; font-size: 12px; font-weight: bold; letter-spacing: 1px;">SUNAFIL - DINI - SDAN</p>
+                        <p style="margin: 4px 0; color: #475569; font-size: 11px;">${Utils.escapeHTML(scopeLabel)}</p>
                     </div>
                     <div style="text-align: right;">
                         <p style="margin: 0; color: #64748b; font-size: 11px;">Fecha de emisión:</p>
@@ -866,11 +817,11 @@ const Dashboard = {
                 <div style="display: flex; gap: 15px; margin-bottom: 30px;">
                     <div style="flex: 1; background: white; padding: 15px; border-radius: 12px; border: 1px solid #e2e8f0; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); text-align: center;">
                         <p style="margin: 0; color: #64748b; font-size: 10px; font-weight: bold; text-transform: uppercase;">Visualizaciones</p>
-                        <h2 style="margin: 10px 0; color: #003366; font-size: 28px; font-weight: 800;">${txtTotalVistas}</h2>
+                        <h2 style="margin: 10px 0; color: #003366; font-size: 28px; font-weight: 800;">${Utils.escapeHTML(txtTotalVistas)}</h2>
                     </div>
                     <div style="flex: 1; background: white; padding: 15px; border-radius: 12px; border: 1px solid #fee2e2; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); text-align: center;">
                         <p style="margin: 0; color: #b91c1c; font-size: 10px; font-weight: bold; text-transform: uppercase;">Descargas Excel</p>
-                        <h2 style="margin: 10px 0; color: #dc2626; font-size: 28px; font-weight: 800;">${txtTotalDescargas}</h2>
+                        <h2 style="margin: 10px 0; color: #dc2626; font-size: 28px; font-weight: 800;">${Utils.escapeHTML(txtTotalDescargas)}</h2>
                     </div>
                     <div style="flex: 1; background: white; padding: 15px; border-radius: 12px; border: 1px solid #e0e7ff; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); text-align: center;">
                         <p style="margin: 0; color: #4338ca; font-size: 10px; font-weight: bold; text-transform: uppercase;">Crecimiento Mensual</p>
@@ -911,7 +862,7 @@ const Dashboard = {
 
                 <div style="margin-top: 35px; background: #003366; color: white; padding: 25px; border-radius: 12px; page-break-inside: avoid; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
                     <p style="margin: 0; font-size: 13.5px; line-height: 1.6;">
-                        <b>CONCLUSIÓN ANALÍTICA:</b> Tras la evaluación de las métricas de uso, se identifica que la <b>${topSede}</b> registra el mayor índice de actividad en la plataforma. Se sugiere considerar estos patrones estadísticos para la toma de decisiones a nivel regional, priorización de soporte técnico y optimización continua de la infraestructura para garantizar el desempeño de la subdirección.
+                        <b>CONCLUSIÓN ANALÍTICA:</b> Tras la evaluación de las métricas de uso, se identifica que la <b>${Utils.escapeHTML(topSede)}</b> registra el mayor índice de actividad en la plataforma. Se sugiere considerar estos patrones estadísticos para la toma de decisiones a nivel regional, priorización de soporte técnico y optimización continua de la infraestructura para garantizar el desempeño de la subdirección.
                     </p>
                 </div>
                 <div style="margin-top: 40px; text-align: center; color: #94a3b8; font-size: 10px;">
@@ -932,10 +883,21 @@ const Dashboard = {
             pagebreak: { mode: ['css', 'legacy'] }
         };
 
-        html2pdf().set(opciones).from(contenedor).save().then(() => {
-            contenedor.style.display = 'none';
-            contenedor.innerHTML = "";
-        });
+        button.disabled = true;
+        try {
+            await Utils.loadPdf();
+            if (AppState.sessionToken !== token) return;
+            const pdf = await html2pdf().set(opciones).from(contenedor).toPdf().get('pdf');
+            if (AppState.sessionToken === token) pdf.save(opciones.filename);
+        } catch {
+            if (AppState.sessionToken === token) Utils.showToast('No se pudo generar el reporte PDF.');
+        } finally {
+            if (AppState.sessionToken === token) {
+                contenedor.style.display = 'none';
+                contenedor.replaceChildren();
+                button.disabled = false;
+            }
+        }
     }
 };
 
@@ -967,12 +929,16 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('open-tr').addEventListener('click', () => UI.showPage('procesador'));
     document.getElementById('open-ruc').addEventListener('click', () => UI.showPage('ruc'));
     document.getElementById('nav_procesador')?.addEventListener('click', () => UI.showPage('procesador'));
-    document.getElementById('nav_dashboard')?.addEventListener('click', () => {
+    document.getElementById('lector-version').textContent = ReaderConfig.version + ' (' + ReaderConfig.revision + ')';
+    const dashboardButton = document.getElementById('nav_dashboard');
+    dashboardButton.hidden = !ReaderConfig.apiUrl;
+    dashboardButton.addEventListener('click', () => {
         if (AppState.isLoggedIn) {
             UI.showPage('dashboard');
             Dashboard.renderDashboard();
         } else {
             document.getElementById('login-modal').classList.remove('hidden');
+            document.getElementById('btn_login_submit').focus();
         }
     });
 
@@ -998,9 +964,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const applyDark = (on) => {
         document.documentElement.classList.toggle('dark-mode', on);
         if (btnDark) btnDark.textContent = on ? '☀️' : '🌙';
-        localStorage.setItem('tr5_dark', on ? '1' : '0');
+        try { localStorage.setItem('tr5_dark', on ? '1' : '0'); } catch {}
     };
-    applyDark(localStorage.getItem('tr5_dark') === '1');
+    try { applyDark(localStorage.getItem('tr5_dark') === '1'); } catch {}
     btnDark?.addEventListener('click', () => applyDark(!document.documentElement.classList.contains('dark-mode')));
 
     document.getElementById('btn_prev')?.addEventListener('click', () => {
@@ -1014,11 +980,18 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Dashboard Buttons
     document.getElementById('btn_report_pdf')?.addEventListener('click', () => Dashboard.generarReportePDF());
-    document.getElementById('btn_logout')?.addEventListener('click', Dashboard.logout);
+    document.getElementById('btn_logout')?.addEventListener('click', () => Dashboard.logout());
 
     // Login 
     document.getElementById('btn_login_submit')?.addEventListener('click', () => Dashboard.attemptLogin());
-    document.getElementById('btn_login_cancel')?.addEventListener('click', () => document.getElementById('login-modal').classList.add('hidden'));
+    const closeLogin = () => {
+        document.getElementById('login-modal').classList.add('hidden');
+        dashboardButton.focus();
+    };
+    document.getElementById('btn_login_cancel').addEventListener('click', closeLogin);
+    document.getElementById('login-modal').addEventListener('keydown', event => {
+        if (event.key === 'Escape') closeLogin();
+    });
 
     // actualizar drop zone
     const dropZone = document.getElementById('upload-zone');
@@ -1038,7 +1011,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
 
         dropZone.addEventListener('drop', e => {
-            if (!UI.requireIntendencia()) return;
+            if (AppState.trBusy || !UI.requireIntendencia()) return;
             const dt = e.dataTransfer;
             if (dt.files.length > 0) {
                 document.getElementById('file_input').files = dt.files;

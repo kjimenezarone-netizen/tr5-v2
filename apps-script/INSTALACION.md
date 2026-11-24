@@ -1,33 +1,46 @@
-# Preparar V2tr5/tr6
+# Configurar las estadísticas del lector
 
-1. Abra el Google Sheets llamado V2tr5/tr6. No necesita crear pestañas ni encabezados manualmente.
-2. Abra **Extensiones > Apps Script** y nombre el proyecto **Lector V2 Estadísticas**.
-3. Reemplace el contenido de Código.gs con el archivo Code.gs de esta carpeta y guarde.
-4. En **Configuración del proyecto > Propiedades de secuencia de comandos**, agregue ADMIN_USER (usuario administrativo) y ADMIN_PASSWORD (contraseña única de al menos 16 caracteres). No comparta la contraseña en el chat ni la coloque en el HTML/JavaScript público. Los editores del proyecto pueden acceder a estas propiedades.
-5. En el editor seleccione **inicializar** y pulse **Ejecutar**. Autorice el acceso solicitado a su hoja. Se crea la pestaña Eventos, se guardan sus encabezados y el ID de esta hoja en las propiedades. Puede repetirse sin borrar eventos; una cabecera incompatible provoca error.
-6. Use **Implementar > Nueva implementación > Aplicación web**. Ejecutar como: usted. Acceso: cualquier usuario, si su organización permite esta opción. Es necesario para registrar estadísticas de módulos sin login; no publique la hoja de cálculo ni cambie sus permisos de uso compartido. Si su organización restringe esa opción, revise el esquema de acceso antes de conectar el frontend.
-7. Implemente y copie la URL terminada en **/exec**. Comparta únicamente esa URL para conectar la V2. No use /dev.
-8. Al abrir /exec debe obtener un JSON con status ok y service Lector V2. Esto comprueba el servicio, no la escritura de eventos ni el login.
+El lector procesa archivos y genera Excel localmente. Si necesitas estadísticas, prepara una hoja de pruebas en Google Workspace, abre el proyecto vinculado y actualiza Code.gs. Ejecuta inicializar para crear Eventos_v3. La pestaña Eventos de versiones anteriores se conserva aparte.
 
-## Estado de integración
+En las propiedades del script, configura:
 
-Este backend nuevo AÚN NO está conectado al frontend. El proyecto conserva la URL anterior. No es suficiente reemplazarla: hay que adaptar LOGIN (user/password sin Base64), DASHBOARD por POST con token en el cuerpo, LOGOUT y eventos con el esquema nuevo. Esos cambios se harán al recibir la URL y se probarán contra el despliegue.
+| Propiedad | Significado |
+| --- | --- |
+| INSTITUTIONAL_DOMAIN | Dominio de Google Workspace autorizado |
+| ADMIN_EMAILS | Correos de administradores separados por comas |
+| TELEMETRY_MODE | OFF, INSTITUTIONAL o ANONYMOUS. El valor inicial es OFF. |
+| OFFICES_BY_USER | Objeto JSON de correo institucional a código de intendencia para el modo INSTITUTIONAL |
 
-## Datos guardados
+Ejemplo sintético de asignación de intendencias:
 
-Eventos: Fecha, IdEvento, Intendencia, Modulo, Accion, Registros, Archivos, DuracionMs, Bytes, Version. Módulos TR5, TR6, TR5_TR6, RUC. Una carga conjunta cuenta como un procesamiento TR5_TR6. Registros en descarga cuenta filas exportadas; no se suma al total de registros procesados.
+~~~json
+{"inspectora@example.test":"IRE-LAMBAYEQUE"}
+~~~
 
-El servidor rechaza campos adicionales en eventos. No recibe archivos, nombres de archivos, RUC, DNI, nombres de personas ni mensajes de error libres. Usa hora del servidor. IdEvento permite evitar duplicados en reintentos.
+Publica como aplicación web dentro del dominio de pruebas. Verifica que Session.getActiveUser().getEmail() devuelva el correo del usuario real con el modo de ejecución elegido. Cuando Google no entrega el correo, el servicio deniega el acceso. Conserva los permisos de la hoja y utiliza una ruta institucional que permita autenticar la sesión desde el origen del lector. El modo de ejecución y la disponibilidad de cookies dependen de la configuración de Google Workspace y del navegador. Nunca uses Session.getEffectiveUser() como identidad del visitante.
 
-## Contrato de API
+## Compilar y probar la integración
 
-POST con cuerpo JSON y Content-Type text/plain;charset=UTF-8 (evitar preflight en Apps Script). El cliente debe leer el JSON y confirmar status ok; no tratar una respuesta opaca no-cors como escritura confirmada. Validar redirecciones/CORS desde el origen real antes de dar por completada la integración.
+Configura LEC_API_URL con la URL HTTPS aprobada o una ruta de la misma aplicación, por ejemplo /api/lector. Si se utiliza una URL de otro origen, configura LEC_API_CREDENTIALS=include y prueba la política CORS y las redirecciones con la sesión real. Una pasarela institucional del mismo origen puede ser necesaria si el despliegue de Apps Script no admite peticiones con credenciales desde Pages.
 
-- LOGIN: {accion: "LOGIN", user, password}; devuelve token y expires.
-- DASHBOARD: {accion: "DASHBOARD", token}; devuelve agregados y últimos 50 eventos.
-- LOGOUT: {accion: "LOGOUT", token}; invalida sesión.
-- Evento: {eventId, intendencia, modulo, accion, registros, archivos, duracionMs, bytes, version:"2.0"}.
+Establece LEC_TELEMETRY_MODE con el mismo valor del script. El modo institucional asigna la intendencia según la cuenta aprobada y rechaza eventos de otra intendencia. El modo anónimo produce estadísticas declaradas y las identifica como tales en el tablero. El panel administrativo siempre requiere una cuenta de ADMIN_EMAILS.
 
-Sesiones de hasta 2 horas en caché (Google puede expulsarlas antes). Cinco fallos bloquean el login administrativo global durante 15 minutos. Los eventos son públicos y autodeclarados: la validación no impide que terceros simulen estadísticas; no usar estos contadores como auditoría certificada. No hay secretos embebidos en frontend. El dashboard lee todas las filas y la deduplicación busca IDs en la hoja: evaluar volumen/cuotas antes de uso masivo y migrar almacenamiento si el crecimiento lo exige.
+| Petición | Resultado esperado |
+| --- | --- |
+| GET | Estado del servicio y versión de API |
+| POST, accion LOGIN | Token temporal para el panel de la cuenta autorizada |
+| POST, accion DASHBOARD con token | Agregados del modo activo y últimos 50 eventos |
+| POST, accion LOGOUT con token | Revocación de la sesión administrativa |
+| POST, accion TELEMETRY_SESSION | Token temporal para registrar eventos institucionales |
+| POST, evento | Confirmación, duplicado, rechazo o límite de frecuencia |
 
-Referencias oficiales: https://developers.google.com/apps-script/guides/web y https://developers.google.com/apps-script/guides/properties
+El cuerpo se envía como JSON con Content-Type text/plain;charset=UTF-8. El servidor espera que la cuenta de Google validada siga activa al utilizar un token institucional. Las contraseñas ADMIN_USER y ADMIN_PASSWORD de la versión anterior ya no se utilizan.
+
+El panel limita la lectura a los últimos 5 000 eventos y separa los tipos de procedencia. Comprueba los duplicados recientes en la hoja y utiliza una caché temporal. Las métricas no guardan textos, archivos, DNI, RUC ni correos. Define con el responsable de datos la retención de Eventos_v3 y valida la capacidad con el volumen real.
+
+Antes de habilitar el servicio, prueba desde el sitio de ensayo el acceso con cuenta autorizada, el rechazo de una cuenta sin acceso, el registro, la revocación, la caída temporal del servidor y el funcionamiento local del lector. Las pruebas automatizadas utilizan una sesión y una hoja simuladas.
+
+Referencias:
+
+- [Aplicaciones web de Apps Script](https://developers.google.com/apps-script/guides/web)
+- [Identidad del usuario activo en Apps Script](https://developers.google.com/apps-script/reference/base/session)

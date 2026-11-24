@@ -97,27 +97,37 @@ test('RUC: flujo de interfaz real descarga directamente sin previsualizar ni lim
         get() { return [{ textContent: this.value === 'all' ? 'Todos los registros' : 'RUC repetidos' }]; }
     });
     get('ruc-files').files = [{ name: 'RM2026.txt', size: 130 }];
-    const workbookApi = {
-        book_new: () => ({ sheets: new Map() }),
-        aoa_to_sheet: rows => ({ rows }),
-        book_append_sheet: (wb, ws, name) => wb.sheets.set(name, ws)
-    };
     let confirm = false;
+    let runResult = { model, issues: [], issueCount: 0, rejectedSources: 0 };
     const context = vm.createContext({
         document: mockDocument,
         window: { confirm: () => confirm },
-        console,
+        console, setTimeout, clearTimeout,
         performance: { now: () => 10 },
         UI: { requireIntendencia: () => true },
         AppState: { intendencia: 'PRUEBA' },
-        Processing: { async run() { return { model, issues: [], rejectedSources: 0 }; }, cancel() {} },
+        Processing: { async run() { return runResult; }, cancel() {} },
         SheetsAPI: { event(name, data) { events.push({ name, data }); } },
-        XLSX: { utils: workbookApi, writeFile(wb, name) { writes.push({ wb, name }); } }
+        ExportFile: {
+            async run(kind, { records, context }) {
+                assert.equal(kind, 'RUC');
+                return { sheets: new Map(RucModel.exportSheets(records, context).map(sheet => [sheet.name, sheet])) };
+            },
+            save(wb, name) { writes.push({ wb, name }); },
+            cancel() {}
+        }
     });
     vm.runInContext(src, context);
     assert.ok(documentListeners.has('DOMContentLoaded'));
     documentListeners.get('DOMContentLoaded')();
     assert.equal(get('ruc-download').disabled, true);
+    const successfulLoad = runResult;
+    runResult = { model: RucModel.consolidate([]), issues: ['Formato desconocido'], issueCount: 1, rejectedSources: 1 };
+    get('ruc-files').value = 'RM2026.txt';
+    await get('ruc-load').trigger('click');
+    assert.equal(get('ruc-files').value, 'RM2026.txt');
+    assert.match(get('ruc-status').textContent, /No se procesó/);
+    runResult = successfulLoad;
     await get('ruc-load').trigger('click');
     assert.equal(get('ruc-download').disabled, false);
     assert.equal(get('ruc-files').value, '', 'La carga válida deja libre el selector');
@@ -132,9 +142,9 @@ test('RUC: flujo de interfaz real descarga directamente sin previsualizar ni lim
 
     get('ruc-search').value = 'NORTE';
     await get('ruc-search').trigger('input');
-    assert.equal(get('ruc-export-hint').textContent, 'Descargar resultado filtrado: 2 registros de la sección 2.');
     await get('ruc-download').trigger('click');
     assert.equal(writes.length, 2);
+    assert.equal(get('ruc-export-hint').textContent, 'Descargar resultado filtrado: 2 registros de la sección 2.');
     assert.equal(writes[1].wb.sheets.get('Original_1').rows.length, 3);
     assert.equal(writes[1].wb.sheets.get('Fuentes').rows.length, 3);
     assert.equal(get('ruc-page').textContent, '2 registros · Página 1 de 1');

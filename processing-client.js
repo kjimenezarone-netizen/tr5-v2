@@ -1,118 +1,62 @@
 const Processing = {
     jobs: new Map(),
-    async runFallback(kind, files, onProgress, isCancelled) {
-        if (kind === 'TR') {
-            const datasets = [];
-            for (const file of files) {
-                if (isCancelled()) throw Object.assign(new Error('Carga cancelada.'), { name: 'AbortError' });
-                onProgress(`Leyendo y detectando: ${file.name}`);
-                const decoded = FileParser.decode(await file.arrayBuffer());
-                onProgress(`Interpretando: ${file.name}`);
-                const parsed = FileParser.parse(decoded.text, file.name);
-                parsed.encoding = decoded.encoding;
-                parsed.originalFile = file;
-                datasets.push(parsed);
-            }
-            if (isCancelled()) throw Object.assign(new Error('Carga cancelada.'), { name: 'AbortError' });
-            onProgress('Validando RUC y agrupando trabajadores…');
-            const analysis = TRAnalysis.build(datasets);
-            const table = FileParser.table(datasets[0]);
-            return { datasets, analysis, table };
-        } else if (kind === 'RUC') {
-            const sources = [], issues = []; let rejectedSources = 0;
-            for (let i = 0; i < files.length; i++) {
-                if (isCancelled()) throw Object.assign(new Error('Carga cancelada.'), { name: 'AbortError' });
-                const file = files[i];
-                onProgress(`Archivo ${i+1} de ${files.length}: ${file.name}`);
-                try {
-                    if (/\.txt$/i.test(file.name)) {
-                        if (file.size > 20*1024*1024) throw new Error('El TXT supera 20 MB.');
-                        onProgress(`Interpretando: ${file.name}`);
-                        const decoded = FileParser.decode(await file.arrayBuffer());
-                        const parsed = FileParser.parse(decoded.text, file.name);
-                        parsed.encoding = decoded.encoding;
-                        if (parsed.type !== 'RUC') throw new Error('El TXT no corresponde a resultados RUC.');
-                        sources.push({ zipId: i, zipName: file.name, entryName: file.name, originalFile: file, encoding: decoded.encoding, dataset: parsed });
-                        parsed.diagnostics.forEach(d => issues.push(`${file.name}: fila ${d.sourceRow}, ${d.actual} columnas (encabezado: ${d.expected}). Se conservó la fila.`));
-                        const invalid = parsed.records.filter(r => !/^\d{11}$/.test(r.rawCells[0].trim())).length;
-                        if (invalid) issues.push(`${file.name}: ${invalid} registros sin RUC de 11 dígitos, conservados sin consolidar.`);
-                    } else if (/\.zip$/i.test(file.name)) {
-                        if (file.size > 20*1024*1024) throw new Error('El ZIP supera 20 MB.');
-                        const zip = await JSZip.loadAsync(await file.arrayBuffer());
-                        const entries = Object.values(zip.files).filter(e => !e.dir && /\.txt$/i.test(e.name));
-                        if (!entries.length) throw new Error('El ZIP no contiene TXT.');
-                        for (const entry of entries) {
-                            try {
-                                onProgress(`Extrayendo: ${entry.name}`);
-                                const bytes = await entry.async('uint8array');
-                                const decoded = FileParser.decode(bytes);
-                                onProgress(`Interpretando: ${entry.name}`);
-                                const parsed = FileParser.parse(decoded.text, entry.name);
-                                parsed.encoding = decoded.encoding;
-                                if (parsed.type !== 'RUC') throw new Error('El TXT no corresponde a resultados RUC.');
-                                sources.push({ zipId: i, zipName: file.name, entryName: entry.name, originalFile: file, encoding: decoded.encoding, dataset: parsed });
-                                parsed.diagnostics.forEach(d => issues.push(`${file.name} / ${entry.name}: fila ${d.sourceRow}, ${d.actual} columnas (encabezado: ${d.expected}). Se conservó la fila.`));
-                                const invalid = parsed.records.filter(r => !/^\d{11}$/.test(r.rawCells[0].trim())).length;
-                                if (invalid) issues.push(`${file.name} / ${entry.name}: ${invalid} registros sin RUC de 11 dígitos, conservados sin consolidar.`);
-                            } catch(err) { rejectedSources++; issues.push(`${file.name} / ${entry.name}: ${err.message}`); }
-                        }
-                    } else {
-                        throw new Error('Formato no compatible. Seleccione archivos TXT o ZIP.');
-                    }
-                } catch(err) { rejectedSources++; issues.push(`${file.name}: ${err.message}`); }
-            }
-            onProgress('Agrupando empresas y comparando fuentes…');
-            return { model: RucModel.consolidate(sources), issues, rejectedSources };
-        } else {
-            throw new Error('Operación no reconocida.');
-        }
-    },
     run(kind, files, onProgress) {
-        if (this.jobs.has(kind)) return Promise.reject(new Error('Ya hay una carga en curso.'));
+        const fallback = files.reduce((total, file) => total + file.size, 0) <= 2 * 1024 * 1024
+            ? (signal, progress) => ProcessingEngine.run(kind, files, {
+                signal,
+                progress,
+                pause: () => new Promise(resolve => setTimeout(resolve, 0))
+            })
+            : null;
+        return this.start(kind, 'processing-worker.js', { kind, files }, onProgress, fallback);
+    },
+    start(kind, script, payload, onProgress = () => {}, fallback = null) {
+        if (this.jobs.has(kind)) return Promise.reject(new Error('Ya hay una operación de ese tipo en curso.'));
         return new Promise((resolve, reject) => {
+            const controller = new AbortController();
             let worker;
-            let cancelled = false;
-            let job = null;
+            let fallbackStarted = false;
+            const active = () => this.jobs.get(kind) === job;
+            const notify = message => { if (active()) onProgress(message); };
             const finish = (error, result) => {
-                // Impedir que un fallback antiguo destruya una nueva carga del mismo tipo.
-                if (this.jobs.get(kind) !== job) return;
+                if (!active()) return;
                 this.jobs.delete(kind);
-                if (worker) worker.terminate();
-                error ? reject(error) : resolve(result);
+                clearTimeout(timeout);
+                worker?.terminate();
+                if (error && !controller.signal.aborted) controller.abort(error);
+                if (error) reject(error);
+                else resolve(result);
             };
-
-            const cancel = () => {
-                cancelled = true;
-                finish(Object.assign(new Error('Carga cancelada. No se publicaron resultados parciales.'), { name: 'AbortError' }));
+            const job = {
+                cancel: () => finish(new DOMException('Operación cancelada.', 'AbortError'))
+            };
+            const timeout = setTimeout(() => finish(new Error('Se agotó el tiempo. Reduzca el tamaño de la consulta y vuelva a intentar.')), 120000);
+            this.jobs.set(kind, job);
+            const useFallback = () => {
+                if (!active() || fallbackStarted) return;
+                fallbackStarted = true;
+                worker?.terminate();
+                worker = null;
+                if (!fallback) return finish(new Error('El procesamiento en segundo plano no está disponible para esta operación.'));
+                Promise.resolve().then(() => fallback(controller.signal, notify))
+                    .then(result => finish(null, result), finish);
             };
 
             try {
-                worker = new Worker('processing-worker.js?v=3.1');
-                job = { worker, cancel };
-                this.jobs.set(kind, job);
+                worker = new Worker(ReaderConfig.asset(script));
                 worker.onmessage = ({ data }) => {
-                    if (data.event === 'progress') onProgress(data.message);
+                    if (!active() || fallbackStarted) return;
+                    if (data.event === 'progress') notify(data.message);
                     else if (data.event === 'done') finish(null, data.result);
-                    else if (data.event === 'error') finish(new Error(data.message));
+                    else if (data.event === 'error') finish(Object.assign(new Error(data.message), { code: data.code }));
                 };
-                worker.onerror = () => {
-                    // Fallback to main thread if worker fails during runtime
-                    this.runFallback(kind, files, onProgress, () => cancelled)
-                        .then(res => finish(null, res))
-                        .catch(err => finish(err));
-                };
+                worker.onerror = useFallback;
                 worker.onmessageerror = () => finish(new Error('No se pudo recibir el resultado del procesamiento.'));
-                try { worker.postMessage({ kind, files }); } catch(error) { finish(error); }
+                worker.postMessage(payload);
             } catch {
-                // If Worker construction throws (e.g. file:/// sandbox)
-                job = { worker: null, cancel };
-                this.jobs.set(kind, job);
-                this.runFallback(kind, files, onProgress, () => cancelled)
-                    .then(res => finish(null, res))
-                    .catch(err => finish(err));
+                useFallback();
             }
         });
     },
     cancel(kind) { this.jobs.get(kind)?.cancel(); }
 };
-

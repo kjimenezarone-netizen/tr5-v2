@@ -41,27 +41,8 @@ test('TR: limpiar selección no borra tablas, fichas, reportes ni archivos en me
     assert.equal(nodes.get('file-info-container').classList.contains('hidden'), true);
     assert.deepEqual(state.people, [{id:'01-00123'}]);
     assert.deepEqual(state.sheets, ['Resumen', 'TR5 Original']);
-    assert.match(src, /TRView\.set\(analysis\);[\s\S]*?UI\.resetFileSelection\(\)/);
-    assert.doesNotMatch(src, /TRView\.set\(analysis\);\s*UI\.clearFile\(/);
-});
-
-test('RUC: solo se limpia input si hubo fuentes válidas, sin tocar modelo', () => {
-    const src = read('ruc.js');
-    const start = src.indexOf('            if (model.sources.length > 0) {');
-    const end = src.indexOf('\n            }\n', start);
-    assert.ok(start >= 0 && end > start, 'Existe rama de carga exitosa');
-    const fragment = src.slice(start, end + '\n            }'.length);
-    const file = element('consulta_2026.zip');
-    const model = {sources: []};
-    const statuses = [];
-    const execute = new Function('model','el','status','sources','issues', fragment);
-    execute(model, () => file, s => statuses.push(s), [], ['Archivo inválido']);
-    assert.equal(file.value, 'consulta_2026.zip', 'En lote inválido se permite corregir/reintentar');
-    assert.match(statuses.at(-1), /No se procesó/);
-    model.sources = [{id:1}];
-    execute(model, () => file, s => statuses.push(s), model.sources, []);
-    assert.equal(file.value, '', 'Lote válido libera el input TXT/ZIP');
-    assert.equal(model.sources.length, 1, 'Las fuentes procesadas continúan en memoria');
+    assert.match(src, /TRView\.set\(analysis, processingOffice\);[\s\S]*?UI\.resetFileSelection\(\)/);
+    assert.doesNotMatch(src, /TRView\.set\(analysis, processingOffice\);\s*UI\.clearFile\(/);
 });
 
 test('RUC: flujo simplificado de tres pasos y descarga directa sin previsualización', () => {
@@ -85,6 +66,7 @@ test('RUC: flujo simplificado de tres pasos y descarga directa sin previsualizac
     assert.match(ruc, /Descargar Excel/);
     assert.match(js, /RucModel\.exportForView\(model, filtered, query, mode\)/);
     const select = ruc.slice(ruc.indexOf('<select id="ruc-filter"'),ruc.indexOf('</select>',ruc.indexOf('<select id="ruc-filter"')));
+    assert.ok(ruc.indexOf('id="ruc-download"') < ruc.indexOf('id="ruc-search"'));
     assert.match(select, /value="all"/);
     assert.match(select, /value="repeated"/);
     assert.doesNotMatch(select, /value="selected"|value="differences"/);

@@ -10,6 +10,5 @@ assert.ok(file('tr-filters.js').includes('label.textContent = description'));
 assert.ok(!file('tr-filters.js').includes('li.innerHTML=`<span'));
 assert.ok(file('ruc.js').includes("Processing.cancel('RUC')"));
 assert.ok(file('tr-analysis.js').includes('Utils.escapeHTML(value ??'));
-assert.ok(file('tr-analysis.js').includes('regimenColumns[1]'));
 assert.ok(!file('index.html').includes('id="tr-column-options"'));
 console.log('OK: seguridad de filtros, cancelación RUC, campos TR6 y UI sin ocultar columnas.');

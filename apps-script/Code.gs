@@ -1,111 +1,208 @@
-// Vincular este proyecto desde Extensiones > Apps Script de la hoja V2tr5/tr6.
-const HEADERS = ['Fecha', 'IdEvento', 'Intendencia', 'Modulo', 'Accion', 'Registros', 'Archivos', 'DuracionMs', 'Bytes', 'Version'];
-const MODULES = ['TR5', 'TR6', 'TR5_TR6', 'RUC'];
+const SHEET_NAME = 'Eventos_v3';
+const HEADERS = ['Fecha', 'IdEvento', 'Intendencia', 'Modulo', 'Accion', 'Registros', 'Archivos', 'DuracionMs', 'Bytes', 'Version', 'Confianza'];
+const MODULES = ['TR', 'TR5', 'TR6', 'TR5_TR6', 'RUC'];
 const ACTIONS = ['VISUALIZACIÓN', 'DESCARGAR_EXCEL', 'ERROR', 'FORMATO_DESCONOCIDO'];
 const OFFICES = ['IRE-AMAZONAS','IRE-ANCASH','IRE-APURIMAC','IRE-AREQUIPA','IRE-AYACUCHO','IRE-CAJAMARCA','IRE-CALLAO','IRE-CUSCO','IRE-HUANCAVELICA','IRE-HUANUCO','IRE-ICA','IRE-JUNIN','IRE-LA LIBERTAD','IRE-LAMBAYEQUE','IRE-LIMA','ILM','SDIE','IRE-LORETO','IRE-MADRE DE DIOS','IRE-MOQUEGUA','IRE-PASCO','IRE-PIURA','IRE-PUNO','IRE-SAN MARTIN','IRE-TACNA','IRE-TUMBES','IRE-UCAYALI'];
+const EVENT_FIELDS = ['eventId', 'intendencia', 'modulo', 'accion', 'registros', 'archivos', 'duracionMs', 'bytes', 'version', 'token'];
+const DASHBOARD_ROWS = 5000;
+const EVENT_LOOKBACK = 5000;
+const SESSION_SECONDS = 1800;
+const TIME_ZONE = 'America/Lima';
 
 function inicializar() {
   const book = SpreadsheetApp.getActiveSpreadsheet();
-  if (!book) throw new Error('Ejecute desde el proyecto vinculado a su hoja.');
-  PropertiesService.getScriptProperties().setProperty('SPREADSHEET_ID', book.getId());
-  const sheet = book.getSheetByName('Eventos') || book.insertSheet('Eventos');
-  if (sheet.getLastRow() === 0) sheet.appendRow(HEADERS);
+  if (!book) throw new Error('Ejecute desde el proyecto vinculado a la hoja.');
+  const sheet = book.getSheetByName(SHEET_NAME) || book.insertSheet(SHEET_NAME);
+  if (!sheet.getLastRow()) sheet.appendRow(HEADERS);
   verificarCabecera_(sheet);
   sheet.setFrozenRows(1);
   sheet.getRange(1, 1, 1, HEADERS.length).setFontWeight('bold').setBackground('#003366').setFontColor('#ffffff');
-  sheet.autoResizeColumns(1, HEADERS.length);
+  PropertiesService.getScriptProperties().setProperty('SPREADSHEET_ID', book.getId());
 }
+
 function verificarCabecera_(sheet) {
-  if (JSON.stringify(sheet.getRange(1,1,1,HEADERS.length).getValues()[0]) !== JSON.stringify(HEADERS)) throw new Error('Cabecera incompatible.');
+  if (JSON.stringify(sheet.getRange(1, 1, 1, HEADERS.length).getValues()[0]) !== JSON.stringify(HEADERS)) {
+    throw new Error('Cabecera incompatible.');
+  }
 }
+
 function hoja_() {
   const id = PropertiesService.getScriptProperties().getProperty('SPREADSHEET_ID');
   if (!id) throw new Error('Ejecute inicializar primero.');
-  const sheet = SpreadsheetApp.openById(id).getSheetByName('Eventos');
-  if (!sheet) throw new Error('No existe Eventos.');
-  verificarCabecera_(sheet); return sheet;
+  const sheet = SpreadsheetApp.openById(id).getSheetByName(SHEET_NAME);
+  if (!sheet) throw new Error('La hoja Eventos_v3 no existe.');
+  verificarCabecera_(sheet);
+  return sheet;
 }
-function json_(data) { return ContentService.createTextOutput(JSON.stringify(data)).setMimeType(ContentService.MimeType.JSON); }
-function doGet() { return json_({status:'ok',service:'Lector V2',version:'2.0'}); }
-function doPost(e) {
+
+function json_(data) {
+  return ContentService.createTextOutput(JSON.stringify(data)).setMimeType(ContentService.MimeType.JSON);
+}
+
+function doGet() {
+  return json_({ status: 'ok', service: 'Lector TR5/TR6 y RUC Masivo', apiVersion: '3' });
+}
+
+function doPost(event) {
   try {
-    const raw = e && e.postData && e.postData.contents;
-    if (!raw || raw.length > 4096) return json_({status:'invalid_request'});
-    const data = JSON.parse(raw);
-    if (!data || typeof data !== 'object' || Array.isArray(data)) return json_({status:'invalid_request'});
-    if (data.accion === 'LOGIN') return json_(login_(data));
-    if (data.accion === 'DASHBOARD') return json_(sesion_(data.token) ? dashboard_() : {status:'unauthorized'});
+    const raw = event && event.postData && event.postData.contents;
+    if (!raw || raw.length > 4096) return json_({ status: 'invalid_request' });
+    let data;
+    try { data = JSON.parse(raw); } catch { return json_({ status: 'invalid_request' }); }
+    if (!data || typeof data !== 'object' || Array.isArray(data)) return json_({ status: 'invalid_request' });
+
+    const props = PropertiesService.getScriptProperties();
+    const mode = modo_(props);
+    if (data.accion === 'LOGIN') return json_(crearSesion_(props, 'admin'));
+    if (data.accion === 'TELEMETRY_SESSION') {
+      return json_(mode === 'INSTITUTIONAL' ? crearSesion_(props, 'events') : { status: 'disabled' });
+    }
+    if (data.accion === 'DASHBOARD') {
+      return json_(sesion_(data.token, props, 'admin') ? dashboard_(mode) : { status: 'unauthorized' });
+    }
     if (data.accion === 'LOGOUT') {
-      if (typeof data.token === 'string') CacheService.getScriptCache().remove('session:'+hash_(data.token));
-      return json_({status:'ok'});
+      if (sesion_(data.token, props, 'admin')) CacheService.getScriptCache().remove('session:' + hash_(data.token));
+      return json_({ status: 'ok' });
     }
-    return json_(registrar_(data));
-  } catch (error) { return json_({status:'error',message:'No se pudo completar la operación. Revise configuración y encabezados.'}); }
+    return json_(registrar_(data, props, mode));
+  } catch {
+    return json_({ status: 'error', message: 'No se pudo completar la operación. Revise la configuración del servicio.' });
+  }
 }
+
+function modo_(props) {
+  const value = props.getProperty('TELEMETRY_MODE');
+  return ['INSTITUTIONAL', 'ANONYMOUS'].includes(value) ? value : 'OFF';
+}
+
 function hash_(value) {
-  return Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256,value,Utilities.Charset.UTF_8).map(b=>('0'+((b+256)%256).toString(16)).slice(-2)).join('');
+  return Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, value, Utilities.Charset.UTF_8)
+    .map(byte => ('0' + ((byte + 256) % 256).toString(16)).slice(-2)).join('');
 }
-function login_(data) {
-  const props = PropertiesService.getScriptProperties();
-  const user = props.getProperty('ADMIN_USER'), pass = props.getProperty('ADMIN_PASSWORD');
-  if (!user || !pass || pass.length < 16) return {status:'not_configured'};
-  const lock = LockService.getScriptLock(); lock.waitLock(10000);
+
+function identidad_(props) {
+  const domain = (props.getProperty('INSTITUTIONAL_DOMAIN') || '').trim().toLowerCase();
+  const email = (Session.getActiveUser().getEmail() || '').trim().toLowerCase();
+  return domain && email.split('@').length === 2 && email.split('@')[1] === domain ? email : null;
+}
+
+function oficina_(email, props) {
+  const assignments = JSON.parse(props.getProperty('OFFICES_BY_USER') || '{}');
+  const office = assignments && Object.prototype.hasOwnProperty.call(assignments, email) ? assignments[email] : null;
+  return OFFICES.includes(office) ? office : null;
+}
+
+function isAdmin_(email, props) {
+  return (props.getProperty('ADMIN_EMAILS') || '').split(',').map(value => value.trim().toLowerCase()).includes(email);
+}
+
+function crearSesion_(props, role) {
+  const email = identidad_(props);
+  if (!email || !(role === 'admin' ? isAdmin_(email, props) : oficina_(email, props))) {
+    return { status: 'unauthorized' };
+  }
+  const token = (Utilities.getUuid() + Utilities.getUuid()).replace(/-/g, '');
+  const expires = Date.now() + SESSION_SECONDS * 1000;
+  CacheService.getScriptCache().put('session:' + hash_(token), JSON.stringify({ identity: hash_(email), role, expires }), SESSION_SECONDS);
+  return { status: 'ok', token, expires };
+}
+
+function sesion_(token, props, role) {
+  if (typeof token !== 'string' || !/^[a-f0-9]{64}$/i.test(token)) return null;
+  const email = identidad_(props);
+  if (!email) return null;
+  if (role === 'admin' && !isAdmin_(email, props)) return null;
+  const raw = CacheService.getScriptCache().get('session:' + hash_(token));
+  if (!raw) return null;
+  const session = JSON.parse(raw);
+  return session.role === role && session.identity === hash_(email) && session.expires > Date.now() ? email : null;
+}
+
+function registrar_(data, props, mode) {
+  if (mode === 'OFF') return { status: 'disabled' };
+  if (Object.keys(data).some(key => !EVENT_FIELDS.includes(key)) || !OFFICES.includes(data.intendencia)
+      || !MODULES.includes(data.modulo) || !ACTIONS.includes(data.accion)) return { status: 'invalid_event' };
+  if (typeof data.eventId !== 'string' || !/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i.test(data.eventId)
+      || typeof data.version !== 'string' || !/^\d{1,4}\.\d{1,4}\.\d{1,4}$/.test(data.version)) return { status: 'invalid_event' };
+  const numbers = [data.registros, data.archivos, data.duracionMs, data.bytes];
+  const maxima = [60000, 20, 600000, 40 * 1024 * 1024];
+  if (numbers.some((value, index) => !Number.isSafeInteger(value) || value < 0 || value > maxima[index])) return { status: 'invalid_event' };
+
+  const identity = mode === 'INSTITUTIONAL' ? sesion_(data.token, props, 'events') : null;
+  if (mode === 'INSTITUTIONAL' && (!identity || oficina_(identity, props) !== data.intendencia)) return { status: 'unauthorized' };
+  const key = identity ? hash_(identity) : 'anonymous';
+  const cache = CacheService.getScriptCache();
+  const eventId = data.eventId.toLowerCase();
+  const idKey = 'event:' + mode + ':' + eventId;
+  const quotaKey = 'quota:' + key + ':' + Math.floor(Date.now() / 60000);
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(2500)) return { status: 'busy' };
   try {
-    const state = JSON.parse(props.getProperty('LOGIN_LIMIT') || '{"attempts":0,"until":0}');
-    if (state.until > Date.now()) return {status:'locked'};
-    if (state.until) { state.attempts=0; state.until=0; }
-    const receivedPassword = data.password;
-    let credentialsMatch = false;
-    if (typeof receivedPassword === 'string') {
-      if (data.user === user) {
-        credentialsMatch = hash_(receivedPassword) === hash_(pass);
-      }
-    }
-    if (!credentialsMatch) {
-      state.attempts++;
-      if (state.attempts >= 5) state.until = Date.now()+15*60*1000;
-      props.setProperty('LOGIN_LIMIT',JSON.stringify(state)); return {status:'unauthorized'};
-    }
-    props.deleteProperty('LOGIN_LIMIT');
-    const token = Utilities.getUuid()+Utilities.getUuid();
-    const expires = Date.now()+2*60*60*1000;
-    CacheService.getScriptCache().put('session:'+hash_(token),String(expires),7200);
-    return {status:'ok',token,expires};
-  } finally { lock.releaseLock(); }
-}
-function sesion_(token) {
-  return typeof token === 'string' && token.length < 200 && Number(CacheService.getScriptCache().get('session:'+hash_(token))) > Date.now();
-}
-function registrar_(data) {
-  // Endpoint público: valida estructura, no acredita identidad del remitente.
-  const allowed = ['eventId','intendencia','modulo','accion','registros','archivos','duracionMs','bytes','version'];
-  if (Object.keys(data).some(k=>!allowed.includes(k)) || !OFFICES.includes(data.intendencia) || !MODULES.includes(data.modulo) || !ACTIONS.includes(data.accion)) return {status:'invalid_event'};
-  if (typeof data.eventId !== 'string' || !/^[a-zA-Z0-9-]{16,80}$/.test(data.eventId) || typeof data.version !== 'string' || !/^\d+\.\d+(?:\.\d+)?$/.test(data.version)) return {status:'invalid_event'};
-  const numbers = ['registros','archivos','duracionMs','bytes'].map(k=>data[k]);
-  if (numbers.some(n=>!Number.isSafeInteger(n) || n<0 || n>1e12)) return {status:'invalid_event'};
-  const lock = LockService.getScriptLock(); lock.waitLock(10000);
-  try {
+    if (cache.get(idKey)) return { status: 'ok', duplicate: true };
+    const used = Number(cache.get(quotaKey) || 0);
+    if (used >= (identity ? 40 : 90)) return { status: 'rate_limited' };
+    cache.put(quotaKey, String(used + 1), 90);
     const sheet = hoja_();
-    if (sheet.getLastRow()>1 && sheet.getRange(2,2,sheet.getLastRow()-1,1).createTextFinder(data.eventId).matchEntireCell(true).findNext()) return {status:'ok',duplicate:true};
-    sheet.appendRow([new Date(),data.eventId,data.intendencia,data.modulo,data.accion,...numbers,data.version]);
-    return {status:'ok'};
-  } finally { lock.releaseLock(); }
+    const length = Math.min(sheet.getLastRow() - 1, EVENT_LOOKBACK);
+    if (length > 0) {
+      const first = sheet.getLastRow() - length + 1;
+      const prior = sheet.getRange(first, 2, length, 1).createTextFinder(eventId).matchEntireCell(true).findNext();
+      if (prior && sheet.getRange(prior.getRow(), 11).getValue() === mode) return { status: 'ok', duplicate: true };
+    }
+    sheet.appendRow([new Date(), eventId, data.intendencia, data.modulo, data.accion, ...numbers, data.version, mode]);
+    cache.put(idKey, '1', 21600);
+    cache.remove('dashboard:' + mode);
+    return { status: 'ok' };
+  } finally {
+    lock.releaseLock();
+  }
 }
-function dashboard_() {
-  const rows = hoja_().getDataRange().getValues().slice(1);
-  const result = {status:'ok',visualizaciones:{},descargas:{},porModulo:{},ultimosRegistros:[],mesActual:0,mesAnterior:0};
-  const now = new Date(), previous = new Date(now.getFullYear(),now.getMonth()-1,15);
-  const month = Utilities.formatDate(now,'America/Lima','yyyy-MM'), prevMonth = Utilities.formatDate(previous,'America/Lima','yyyy-MM');
-  rows.forEach(row=>{
-    const [date,id,office,mod,action,records] = row;
-    if (!(date instanceof Date)) return;
-    if (!result.porModulo[mod]) result.porModulo[mod]={procesamientos:0,exportaciones:0,registros:0,errores:0};
-    if (action==='VISUALIZACIÓN') { result.visualizaciones[office]=(result.visualizaciones[office]||0)+1;result.porModulo[mod].procesamientos++;result.porModulo[mod].registros+=Number(records)||0; }
-    if (action==='DESCARGAR_EXCEL') { result.descargas[office]=(result.descargas[office]||0)+1;result.porModulo[mod].exportaciones++; }
-    if (action==='ERROR' || action==='FORMATO_DESCONOCIDO') result.porModulo[mod].errores++;
-    const period=Utilities.formatDate(date,'America/Lima','yyyy-MM');
-    if(period===month)result.mesActual++;if(period===prevMonth)result.mesAnterior++;
-  });
-  result.ultimosRegistros=rows.slice(-50).reverse().map(r=>({fecha:Utilities.formatDate(new Date(r[0]),'America/Lima','dd/MM/yyyy HH:mm:ss'),intendencia:r[2],modulo:r[3],accion:r[4]}));
+
+function dashboard_(mode) {
+  const cache = CacheService.getScriptCache();
+  const key = 'dashboard:' + mode;
+  const cached = cache.get(key);
+  if (cached) return JSON.parse(cached);
+
+  const sheet = hoja_();
+  const lastRow = sheet.getLastRow();
+  const size = Math.min(lastRow - 1, DASHBOARD_ROWS);
+  const rows = size > 0 ? sheet.getRange(lastRow - size + 1, 1, size, HEADERS.length).getValues() : [];
+  const result = {
+    status: 'ok', mode, visualizaciones: {}, descargas: {}, porModulo: {}, ultimosRegistros: [],
+    mesActual: 0, mesAnterior: 0, windowLimit: DASHBOARD_ROWS, limited: lastRow - 1 > DASHBOARD_ROWS
+  };
+  const month = Utilities.formatDate(new Date(), TIME_ZONE, 'yyyy-MM');
+  const [year, monthNumber] = month.split('-').map(Number);
+  const previous = monthNumber === 1 ? (year - 1) + '-12' : year + '-' + String(monthNumber - 1).padStart(2, '0');
+  const valid = [];
+  for (const row of rows) {
+    const [date, , office, module, action, records, , , , , confidence] = row;
+    if (confidence !== mode || !(date instanceof Date) || Number.isNaN(date.getTime())
+        || !OFFICES.includes(office) || !MODULES.includes(module) || !ACTIONS.includes(action)) continue;
+    valid.push({ date, office, module, action });
+    result.porModulo[module] ??= { procesamientos: 0, exportaciones: 0, registros: 0, errores: 0 };
+    const stats = result.porModulo[module];
+    if (action === 'VISUALIZACIÓN') {
+      result.visualizaciones[office] = (result.visualizaciones[office] || 0) + 1;
+      stats.procesamientos++;
+      stats.registros += Number(records) || 0;
+    } else if (action === 'DESCARGAR_EXCEL') {
+      result.descargas[office] = (result.descargas[office] || 0) + 1;
+      stats.exportaciones++;
+    } else {
+      stats.errores++;
+    }
+    const period = Utilities.formatDate(date, TIME_ZONE, 'yyyy-MM');
+    if (period === month) result.mesActual++;
+    if (period === previous) result.mesAnterior++;
+  }
+  result.ultimosRegistros = valid.slice(-50).reverse().map(row => ({
+    fecha: Utilities.formatDate(row.date, TIME_ZONE, 'dd/MM/yyyy HH:mm:ss'),
+    intendencia: row.office,
+    modulo: row.module,
+    accion: row.action
+  }));
+  cache.put(key, JSON.stringify(result), 60);
   return result;
 }
